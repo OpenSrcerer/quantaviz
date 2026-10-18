@@ -236,10 +236,11 @@
       // level, fast attack / ~150 ms release. `kick` is the bass one: an 808 pushes it to 1 and it
       // follows the note down. Scenes use it for their big visible bass response.
       this.kick = 0; this.midHit = 0; this.highHit = 0; this.kickRaw = 0;
+      this.hitRelease = 0.18;   // seconds a hit takes to fade (user: Kick decay)
       this._hit = {
-        bass: { floor: 0.2, peak: 0.6 },
-        mid: { floor: 0.2, peak: 0.6 },
-        high: { floor: 0.2, peak: 0.6 },
+        bass: { peak: 4, last: undefined, raw: 0 },
+        mid: { peak: 4, last: undefined, raw: 0 },
+        high: { peak: 4, last: undefined, raw: 0 },
       };
       this.recentBeats = new Float32Array(8).fill(-100); // bass beat timestamps (seconds, same clock as update's `now`)
       this.recentBeatAmp = new Float32Array(8);          // strength (0..1) of each of those hits
@@ -372,6 +373,8 @@
       if (this.demo) { this.demo.stop(); this.demo = null; }
       if (this.mediaEl && !this.mediaEl.paused) this.mediaEl.pause();
       this.active = false;
+      // Forget the hit detectors' last values so a new source doesn't start with a false hit.
+      for (const k of Object.keys(this._hit)) { this._hit[k].last = undefined; this._hit[k].peak = 4; this._hit[k].raw = 0; }
     }
 
     stop(reason) {
@@ -664,17 +667,20 @@
       this.bpm = this.bpm ? this.bpm + (bpm - this.bpm) * 0.3 : bpm;
     }
 
-    /** Normalise an instantaneous band energy into the band's recent dynamic range, then envelope it. */
+    /** Hit envelope = the band's onset strength: the positive rate of change of its energy (the
+     *  attack of a hit), normalised by the strongest recent attack, with an instant attack and a
+     *  ~150 ms release. A sustained note counts only when it starts; its sustain reads as zero. */
     _hitEnvelope(st, e, prev, dt) {
-      // Floor drops instantly to quieter values and creeps up slowly; peak jumps up and decays slowly.
-      st.floor = e < st.floor ? e : st.floor + (e - st.floor) * (1 - Math.exp(-dt / 4.0));
-      st.peak = e > st.peak ? e : st.peak + (e - st.peak) * (1 - Math.exp(-dt / 3.0));
-      const range = Math.max(0.15, st.peak - st.floor);
-      let v = clamp((e - st.floor) / range, 0, 1);
-      v = v * v * (3 - 2 * v);                                   // soften the knees
+      const last = st.last === undefined ? e : st.last;
+      st.last = e;
+      const rate = Math.max(0, e - last) / Math.max(dt, 1e-3);          // energy units per second
+      // Reference peak: jumps to the strongest recent attack, decays over ~3 s, never below 4/s so
+      // quiet noise is not promoted to hits.
+      st.peak = Math.max(rate, (st.peak || 4) * Math.exp(-dt / 3.0), 4);
+      let v = clamp(rate / st.peak, 0, 1);
+      v = v * v * (3 - 2 * v);                                           // soften the knees
       st.raw = v;
-      const a = 1 - Math.exp(-dt / (v > prev ? 0.012 : 0.15));
-      return prev + (v - prev) * a;
+      return v > prev ? v : prev + (v - prev) * (1 - Math.exp(-dt / this.hitRelease));
     }
 
     _mean(arr, range) {

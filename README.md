@@ -26,9 +26,11 @@ Every scene maps the spectrum the same way, so what you see always means the sam
 | **Highs** (2200 Hz–16 kHz) | sparkle and detail | twinkle, jitter, photon stars, grid glints, delta electrons, ink shimmer, chromatic fringing and grain |
 
 The big visible bass response in every scene (horizon and disk size, globe radius, bag squeeze,
-spacetime depth, magnetic field, the global zoom punch) uses a *kick envelope*: the bass energy
-normalised into its own recent dynamic range, so a hit always swings it from 0 to 1 whether the
-track is quiet or loud, and an 808 holds it up and lets it fall with the note. Onsets are detected
+spacetime depth and waves, magnetic field, the global zoom punch) uses a *kick envelope* that
+reacts to change, not level: the positive rate of change of the bass energy (the attack of a hit),
+normalised by the strongest recent attack, with an instant attack and a short release (*Kick decay*
+in the settings, 180 ms by default). A hard hit reads 1, a soft one less, and a sustained note
+counts only when it starts. Onsets are detected
 per band too: kick drums shake, mid onsets flash the bodies, treble onsets sparkle. The *Band
 response* section of the settings drawer has a drive slider for each band and for each of the
 three global couplings (shake, glow, sparkle), so you can push or mute any of them.
