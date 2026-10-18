@@ -17,6 +17,7 @@ uniform float uLensing;
 uniform float uSpin;
 uniform float uDisk;
 uniform float uStars;
+uniform float uStretch;     // kick envelope with a smooth ~40 ms attack / ~250 ms return: the disk's "ears"
 uniform float uBeats[8];
 
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
@@ -74,12 +75,14 @@ vec3 nebula(vec2 p) {
 }
 
 vec3 disk(vec2 ps, float rs) {
-  vec2 d = vec2(ps.x, ps.y / 0.30);
+  // The disk stretches with the kick: longer (outer radius) and taller (tilt) on a hit, then relaxes.
+  float tilt = 0.30 + 0.14 * uStretch;
+  vec2 d = vec2(ps.x, ps.y / tilt);
   float rr = length(d) / rs;
   float th = atan(d.y, d.x);
   const float rin = 1.7;
-  const float rout = 6.5;
-  float radial = smoothstep(rin, rin + 0.5, rr) * (1.0 - smoothstep(rout * 0.6, rout, rr));
+  float rout = 4.8 + 4.2 * uStretch;
+  float radial = smoothstep(rin, rin + 0.5, rr) * (1.0 - smoothstep(rout * 0.62, rout, rr));
   if (radial <= 0.0) return vec3(0.0);
   float spin = uTime * uSpin * 1.2 / pow(rr, 1.5);
   float a = th - spin;
@@ -98,7 +101,7 @@ vec3 disk(vec2 ps, float rs) {
       flare += exp(-pow((rr - fr) / 0.45, 2.0)) * exp(-age * 1.8);
     }
   }
-  vec3 col = palette(clamp(1.0 - rr / 7.0, 0.0, 1.0)) * heat * doppler * (0.55 + 0.9 * spec + 0.8 * uLevel);
+  vec3 col = palette(clamp(1.0 - rr / 7.0, 0.0, 1.0)) * heat * doppler * (0.55 + 0.9 * spec + 0.8 * uLevel) * (1.0 + 0.5 * uStretch);
   col += palette(0.95) * flare * 1.8 * radial / (0.5 + rr * 0.3);
   return col * uDisk;
 }
@@ -106,7 +109,7 @@ vec3 disk(vec2 ps, float rs) {
 void main() {
   vec2 p = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
   float px = 1.0 / uRes.y;
-  float rs = 0.08 * (1.0 + 0.55 * uKick + 0.1 * uBass);   // the horizon and its disk grow with every bass hit
+  float rs = 0.08 * (1.0 + 0.07 * uStretch + 0.06 * uBass);   // the hole only breathes gently; the disk does the stretching
   float r = length(p);
   float thE2 = rs * rs * 2.6 * uLensing;
   vec2 ps = p * (1.0 - thE2 / max(r * r, 1e-5));
@@ -126,15 +129,21 @@ void main() {
     constructor(ctx) {
       this.ctx = ctx;
       this.prog = ctx.fsProgram(FS, 'horizon');
+      this.stretch = 0;
     }
     resize() { /* fullscreen shader: nothing to allocate */ }
     render(target, audio, u) {
+      // Smooth the kick for the stretch: quick attack, soft return, so it elongates rather than snaps.
+      const dt = Math.min(u.dt, 0.05);
+      const k = audio.kick;
+      this.stretch += (k - this.stretch) * (1 - Math.exp(-dt / (k > this.stretch ? 0.035 : 0.2)));
       const p = this.prog.use();
       this.ctx.setCommon(p, audio, u);
       p.f('uLensing', u.params.lensing)
         .f('uSpin', u.params.spin)
         .f('uDisk', u.params.disk)
         .f('uStars', u.params.stars)
+        .f('uStretch', this.stretch * u.params.stretch)
         .fv('uBeats', audio.recentBeats);
       this.ctx.drawQuad();
     }
@@ -150,6 +159,7 @@ void main() {
       { key: 'spin', label: 'Disk spin', min: 0, max: 3, step: 0.05, value: 1 },
       { key: 'disk', label: 'Disk brightness', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'stars', label: 'Star density', min: 0.1, max: 1, step: 0.01, value: 0.75 },
+      { key: 'stretch', label: 'Disk stretch on kicks', min: 0, max: 2, step: 0.05, value: 1 },
     ],
     create: (ctx) => new HorizonScene(ctx),
   });
