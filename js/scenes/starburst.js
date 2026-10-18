@@ -69,14 +69,16 @@ void main() {
   // Home direction: latitude from the seed, longitude follows the frequency band (plus jitter),
   // and the whole shell slowly rotates (uSpin) so particles chase their home and swirl.
   float cz = sx * 2.0 - 1.0;
-  float bx = (bt - 0.25) / 0.43;                       // position of this star's band inside the mids
-  float ph = TAU * (bx + (h1 - 0.5) * 0.30) + uSpin;
+  // Eight frequency wedges around the globe (one per slice of the mids), with clear seams between them.
+  float bx = (bt - 0.25) / 0.43;
+  float wedge = (floor(bx * 8.0) + 0.5) / 8.0;
+  float ph = TAU * (wedge + (h1 - 0.5) * 0.085) + uSpin;
   float sr = sqrt(max(1.0 - cz * cz, 0.0));
   vec3 dir = vec3(sr * cos(ph), cz, sr * sin(ph));
 
-  // Shell radius: breathes with bass, bulges with this particle's own band.
-  float b = band(bt);
-  float shell = (0.6 + 0.3 * uBass + 0.5 * b) * uSpread * (0.86 + 0.28 * h2);
+  // Thin hollow shell: breathes with bass, each wedge bulges with its own band.
+  float b = band(0.25 + 0.43 * wedge);
+  float shell = (0.6 + 0.3 * uBass + 0.45 * b) * uSpread * (0.95 + 0.1 * h2);
   vec3 home = dir * shell;
 
   float len = length(pos);
@@ -88,7 +90,7 @@ void main() {
 
   // Curl-noise swirl, stronger with mids.
   vec3 cp = pos * 1.2 + vec3(0.0, uTime * 0.15, uTime * 0.10);
-  acc += curlNoise(cp) * ((0.4 + uMid) * uSwirl * 1.1);
+  acc += curlNoise(cp) * ((0.25 + 0.6 * uMid) * uSwirl * 0.8);
 
   // Beat: sharp outward supernova kick, different random strength for every particle and every beat.
   if (uPulse > 0.05) {
@@ -96,12 +98,12 @@ void main() {
     rnd = rnd * rnd;
     vec3 jd = hash33(vec3(sx * 17.0, uBeatId, 3.0)) - 0.5;
     vec3 kdir = normalize(n + jd * 0.6);
-    acc += kdir * (90.0 * uPulse * uPulse * uBeat * uBurst * (0.15 + rnd));
+    acc += kdir * (32.0 * uPulse * uPulse * uBeat * uBurst * (0.15 + rnd));
   }
 
   // Treble: sparkle jitter.
   vec3 jit = hash33(vec3(sx * 1013.0, bt * 777.0, uTick)) - 0.5;
-  acc += jit * (uHigh * 12.0);
+  acc += jit * (uHigh * 4.0);
 
   // Window movement: stars lag behind like loose objects (lighter ones move more).
   acc += uShove * (0.5 + h3);
@@ -124,7 +126,7 @@ void main() {
   }
 
   // Sprite spin angle lives in seed.w; stars spin faster with loudness and beats.
-  float spinRate = (h4 * 2.0 - 1.0) * (0.5 + 2.0 * uLevel + 1.5 * uPulse);
+  float spinRate = (h4 * 2.0 - 1.0) * (0.3 + 1.0 * uLevel + 1.0 * uPulse);
   float w = mod(aSeed.w + spinRate * dt, TAU);
 
   vPos = pos;
@@ -160,7 +162,8 @@ out float vInner;
 void main() {
   vec4 clip = uViewProj * vec4(aPos, 1.0);
   float w = max(clip.w, 0.001);
-  float b = band(aSeed.y);
+  float wedge = (floor((aSeed.y - 0.25) / 0.43 * 8.0) + 0.5) / 8.0;
+  float b = band(0.25 + 0.43 * wedge);             // the whole wedge pulses with its band
   float spd = length(aVel);
   float h1 = hash11(aSeed.x * 71.3 + 5.0);
   float h2 = hash11(aSeed.x * 29.9 + 9.0);
@@ -171,15 +174,15 @@ void main() {
   float dimm = min(raw, 1.0);
   dimm *= dimm;   // sub-pixel stars fade out instead of flickering
 
-  // Per-star twinkle, deeper with treble.
-  float s = 0.5 + 0.5 * sin(uTime * (1.5 + 5.0 * h1) + h2 * 6.2831853);
-  float amp = 0.35 + 0.5 * uHigh;
+  // Gentle per-star twinkle, a little deeper with treble.
+  float s = 0.5 + 0.5 * sin(uTime * (1.0 + 3.0 * h1) + h2 * 6.2831853);
+  float amp = 0.12 + 0.25 * uHigh;
   float tw = 1.0 - amp * (1.0 - s);
 
-  float ct = 0.3 + 0.7 * fract(aSeed.y * 1.3 + aSeed.x * 0.2);
+  float ct = 0.3 + 0.7 * wedge;                                     // one colour per wedge
   vec3 col = palette(ct) * (0.3 + 1.4 * b + 0.18 * spd) * tw;
   col *= uBright * (0.6 + 0.6 * uIntensity) * (1.0 + 0.5 * uPulse);
-  float cue = 1.0 + 0.3 * clamp((uCamDist - w) / 1.4, -1.0, 1.0);   // nearer stars a bit brighter
+  float cue = 1.0 + 0.6 * clamp((uCamDist - w) / 1.4, -1.0, 1.0);   // the far side recedes
   col *= cue * smoothstep(0.25, 1.0, w) * dimm;
 
   vCol = min(col, vec3(8.0));
@@ -274,7 +277,7 @@ void main() {
         if (r && r[1] > 1) maxPx = Math.min(48, r[1]);
       } catch (e) { /* keep default */ }
       this.maxPx = maxPx;
-      this._alloc(200000);
+      this._alloc(80000);
     }
 
     _free() {
@@ -297,14 +300,15 @@ void main() {
         const sx = Math.random();
         // Frequency band: stars live in the mids (0.25..0.68 of the spectrum), slightly biased low.
         const bt = 0.25 + 0.43 * Math.pow(Math.random(), 1.1);
-        // Size factor: mostly small sparkles, ~10% big, clearly star-shaped ones.
+        // Size factor: mostly medium stars, a quarter of them big and clearly star-shaped.
         const ru = Math.random();
-        const sz = Math.random() < 0.9 ? 0.4 + 0.9 * ru * ru : 1.6 + 2.0 * ru;
+        const sz = Math.random() < 0.75 ? 0.6 + 0.9 * ru : 1.8 + 2.2 * ru;
         // Same home-direction formula as the update shader (spin = 0).
         const cz = sx * 2 - 1;
-        const ph = TAU * ((bt - 0.25) / 0.43 + (hash11(sx * 91.37 + 1.0) - 0.5) * 0.30);
+        const wedge = (Math.floor((bt - 0.25) / 0.43 * 8) + 0.5) / 8;
+        const ph = TAU * (wedge + (hash11(sx * 91.37 + 1.0) - 0.5) * 0.085);
         const sr = Math.sqrt(Math.max(1 - cz * cz, 0));
-        const r0 = 0.8 * (0.86 + 0.28 * hash11(sx * 57.13 + 7.0));
+        const r0 = 0.8 * (0.95 + 0.1 * hash11(sx * 57.13 + 7.0));
         pos[i * 3] = sr * Math.cos(ph) * r0 + (Math.random() - 0.5) * 0.04;
         pos[i * 3 + 1] = cz * r0 + (Math.random() - 0.5) * 0.04;
         pos[i * 3 + 2] = sr * Math.sin(ph) * r0 + (Math.random() - 0.5) * 0.04;
@@ -351,7 +355,7 @@ void main() {
       const gl = this.gl, ctx = this.ctx, mat4 = VIZ.mat4;
       const P = u.params || {};
       const pv = (k, d) => (P[k] === undefined ? d : +P[k]);
-      const want = Math.max(1000, Math.round(pv('count', 200000)));
+      const want = Math.max(1000, Math.round(pv('count', 80000)));
       if (want !== this.count) this._alloc(want);
       const size = pv('size', 1), burst = pv('burst', 1), swirl = pv('swirl', 1), spread = pv('spread', 1);
       const dt = Math.min(Math.max(u.dt || 0.016, 0.0005), 0.05);
@@ -442,7 +446,7 @@ void main() {
     name: 'Starburst',
     blurb: 'A swarm of GPU-simulated stars forms a breathing, frequency-coloured globe; beats shatter it into a supernova.',
     params: [
-      { key: 'count', label: 'Particles', min: 50000, max: 400000, step: 50000, value: 200000, fmt: (v) => Math.round(v / 1000) + 'k' },
+      { key: 'count', label: 'Particles', min: 20000, max: 400000, step: 20000, value: 80000, fmt: (v) => Math.round(v / 1000) + 'k' },
       { key: 'size', label: 'Star size', min: 0.3, max: 3, step: 0.05, value: 1 },
       { key: 'burst', label: 'Beat burst', min: 0, max: 3, step: 0.05, value: 1 },
       { key: 'swirl', label: 'Swirl', min: 0, max: 2, step: 0.05, value: 1 },
