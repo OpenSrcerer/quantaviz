@@ -27,12 +27,13 @@ Every scene maps the spectrum the same way, so what you see always means the sam
 
 The big visible bass response in every scene (horizon and disk size, globe radius, bag squeeze,
 spacetime depth and waves, magnetic field, the global zoom punch) uses a *kick envelope* that
-reacts to change, not level: the attack of each hit in the 35–110 Hz kick band (the gap between a
-fast and a slow energy envelope), measured against the *typical* recent attack rather than the
-strongest, with an absolute noise floor, an instant attack and a short release. *Kick threshold*
-sets how small a hit may be relative to a typical one before it is ignored, *Kick decay* how long a
-hit shows. A typical hit reads about 0.85, a hard one 1, and a sustained note counts only when it
-starts. Onsets are detected
+reacts to change, not level: the attack of each hit in the 35–100 Hz kick band (the gap between a
+fast and a slow envelope of the band's dB level, so a kick riding on a loud bassline counts just
+like an isolated one), measured against the *typical* recent attack rather than the strongest,
+with a 2 dB noise floor, an instant attack and a short release. *Kick threshold* (default 35%)
+sets how small a hit may be relative to a typical one before it is ignored, *Kick decay* how long
+a hit shows. A typical hit reads about 0.85, a hard one 1, and a sustained note counts only when
+it starts. Onsets are detected
 per band too: kick drums shake, mid onsets flash the bodies, treble onsets sparkle. The *Band
 response* section of the settings drawer has a drive slider for each band and for each of the
 three global couplings (shake, glow, sparkle), so you can push or mute any of them.

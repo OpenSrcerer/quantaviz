@@ -16,7 +16,10 @@
   const MAX_DB = -18;
   const TILT_DB_PER_OCT = 2.6;   // pink-noise style compensation so highs are visible
   const FLUX_HISTORY = 48;
-  const HIT_FLOOR = 0.15;        // smallest attack (normalised energy units) that can ever count as a hit
+  // Band energies are linear in dB (0.1 = 7 dB), so attacks are dB jumps: a kick on top of a sustained
+  // bassline adds only 5-12 dB (0.07-0.17), an isolated kick 30-40 dB (0.4-0.6). The floor is ~2 dB,
+  // the smallest measured rise that may count (noise wobble stays below it).
+  const HIT_FLOOR = 0.03;
   // Band sub-ranges in texture coordinate t (log frequency): bass 32–150 Hz, mid 150–2200 Hz, high 2200–16000 Hz.
   const RANGE_T = { bass: [0, 0.25], mid: [0.25, 0.68], high: [0.68, 1] };
 
@@ -240,9 +243,9 @@
       this.hitRelease = 0.18;   // seconds a hit takes to fade (user: Kick decay)
       this.hitThreshold = 0.4;  // attacks below this fraction of the strongest recent one are ignored (user: Kick threshold)
       this._hit = {
-        bass: { fast: undefined, slow: undefined, ref: 0.3, cur: 0, raw: 0 },
-        mid: { fast: undefined, slow: undefined, ref: 0.3, cur: 0, raw: 0 },
-        high: { fast: undefined, slow: undefined, ref: 0.3, cur: 0, raw: 0 },
+        bass: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
+        mid: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
+        high: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
       };
       this.recentBeats = new Float32Array(8).fill(-100); // bass beat timestamps (seconds, same clock as update's `now`)
       this.recentBeatAmp = new Float32Array(8);          // strength (0..1) of each of those hits
@@ -377,8 +380,8 @@
       if (this.mediaEl && !this.mediaEl.paused) this.mediaEl.pause();
       this.active = false;
       // Forget the hit detectors' last values so a new source doesn't start with a false hit.
-      for (const k of Object.keys(this._hit)) { this._hit[k].fast = undefined; this._hit[k].slow = undefined; this._hit[k].ref = 0.3; this._hit[k].cur = 0; this._hit[k].raw = 0; }
-      this._kickPeak = 0.25; this._kickEnv = 0;
+      for (const k of Object.keys(this._hit)) { this._hit[k].fast = undefined; this._hit[k].slow = undefined; this._hit[k].ref = 0.2; this._hit[k].cur = 0; this._hit[k].raw = 0; }
+      this._kickEnv = 0;
     }
 
     stop(reason) {
@@ -573,12 +576,9 @@
       this.bass += (eBass - this.bass) * (eBass > this.bass ? aA2 : aR2);
       this.mid += (eMid - this.mid) * (eMid > this.mid ? aA2 : aR2);
       this.high += (eHigh - this.high) * (eHigh > this.high ? aA2 : aR2);
-      // Kick detection runs on the RAW kick band, normalised only by the bass's own recent loudness,
-      // so the global auto-gain (set by whichever band is loudest, usually the mids) cannot shrink
-      // or inflate it: a kick looks the same whether or not the mids are busy.
-      const eKickRaw = this._mean(this.bandsRaw, r.kick);
-      this._kickPeak = Math.max(eKickRaw, (this._kickPeak || 0.25) * Math.exp(-dt / 8), 0.25);
-      const eKick = Math.min(1.5, eKickRaw / this._kickPeak);
+      // Kick detection runs on the RAW kick band (dB-linear, before the global auto-gain), so the
+      // mids can neither shrink nor inflate it, and a dB jump means the same at any volume.
+      const eKick = this._mean(this.bandsRaw, r.kick);
       this._kickEnv = this._hitEnvelope(this._hit.bass, eKick, this._kickEnv || 0, dt);
       this.kick = clamp(this._kickEnv * this.drive.bass, 0, 1);
       this.kickRaw = this._hit.bass.raw;      // same normalisation, no release: the instantaneous hit level
@@ -687,19 +687,21 @@
      *  typical attack below which a hit is ignored; a typical hit reads ~0.85, a strong one 1.
      *  Instant attack, `hitRelease` seconds of release. A sustained note counts only at its start. */
     _hitEnvelope(st, e, prev, dt) {
-      if (st.fast === undefined) { st.fast = e; st.slow = e; st.ref = 0.3; st.cur = 0; }
+      if (st.fast === undefined) { st.fast = e; st.slow = e; st.ref = 0.2; st.cur = 0; }
       st.fast += (e - st.fast) * (1 - Math.exp(-dt / 0.008));
-      st.slow += (e - st.slow) * (1 - Math.exp(-dt / 0.06));
+      st.slow += (e - st.slow) * (1 - Math.exp(-dt / 0.09));
       const rise = Math.max(0, st.fast - st.slow);
       // Learn the typical attack: follow each attack to its peak; when it has clearly ended, fold
-      // its size into a slow average (about the last six real attacks).
+      // its size into a running average. Smaller attacks pull the reference down faster than big
+      // ones push it up, so a dense section (kicks on top of bass) is recognised within a couple of
+      // bars and one huge isolated hit does not raise the bar for long.
       if (rise > st.cur) st.cur = rise;
       else if (st.cur > 0 && rise < st.cur * 0.5) {
-        if (st.cur > HIT_FLOOR) st.ref += (st.cur - st.ref) * 0.18;
+        if (st.cur > HIT_FLOOR) st.ref += (st.cur - st.ref) * (st.cur < st.ref ? 0.3 : 0.12);
         st.cur = 0;
       }
-      // Re-sensitise only very slowly after a quiet stretch, never below the noise floor.
-      st.ref = Math.max(HIT_FLOOR, st.ref * Math.exp(-dt / 25));
+      // Re-sensitise slowly after a quiet stretch, never below ~1.5x the noise floor.
+      st.ref = Math.max(HIT_FLOOR * 1.5, st.ref * Math.exp(-dt / 20));
       const x = rise / st.ref;
       const thr = clamp(this.hitThreshold, 0, 0.95);
       let v = clamp((x - thr) / (1.15 - thr), 0, 1);

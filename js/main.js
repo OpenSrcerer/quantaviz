@@ -118,7 +118,7 @@
     volume: 0.6,
     drive: { bass: 1, mid: 1, high: 1 },
     kickRelease: 0.18,
-    kickThreshold: 0.5,
+    kickThreshold: 0.35,
     bandFx: { shake: 1, glow: 1, sparkle: 1 },
     effects: Object.assign({}, VIZ.EFFECT_DEFAULTS),
     sceneParams: {},
@@ -320,7 +320,7 @@
       this.audio.setMonitorVolume(s.volume);
       Object.assign(this.audio.drive, s.drive);
       this.audio.hitRelease = s.kickRelease || 0.18;
-      this.audio.hitThreshold = s.kickThreshold === undefined ? 0.5 : s.kickThreshold;
+      this.audio.hitThreshold = s.kickThreshold === undefined ? 0.35 : s.kickThreshold;
       Object.assign(this.post.bands, s.bandFx);
       const colors = this.paletteColors();
       colors.forEach((hex, i) => this.paletteBase.set(hexToLinear(hex), i * 3));
