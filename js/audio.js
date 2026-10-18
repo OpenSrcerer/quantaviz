@@ -241,7 +241,8 @@
       // follows the note down. Scenes use it for their big visible bass response.
       this.kick = 0; this.midHit = 0; this.highHit = 0; this.kickRaw = 0;
       this.hitRelease = 0.18;   // seconds a hit takes to fade (user: Kick decay)
-      this.hitThreshold = 0.4;  // attacks below this fraction of the strongest recent one are ignored (user: Kick threshold)
+      this.hitThreshold = 0.35; // attacks below this fraction of a typical one are ignored (user: Kick threshold)
+      this.kickGateDb = -46;    // kick band must be at least this loud (dBFS) for a hit to count (user: Kick level gate)
       this._hit = {
         bass: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
         mid: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
@@ -579,7 +580,7 @@
       // Kick detection runs on the RAW kick band (dB-linear, before the global auto-gain), so the
       // mids can neither shrink nor inflate it, and a dB jump means the same at any volume.
       const eKick = this._mean(this.bandsRaw, r.kick);
-      this._kickEnv = this._hitEnvelope(this._hit.bass, eKick, this._kickEnv || 0, dt);
+      this._kickEnv = this._hitEnvelope(this._hit.bass, eKick, this._kickEnv || 0, dt, this.kickGateDb);
       this.kick = clamp(this._kickEnv * this.drive.bass, 0, 1);
       this.kickRaw = this._hit.bass.raw;      // same normalisation, no release: the instantaneous hit level
       this.midHit = this._hitEnvelope(this._hit.mid, eMid, this.midHit, dt);
@@ -692,11 +693,19 @@
      *  bleed and quiet-passage wobble from ever counting. `hitThreshold` is the fraction of a
      *  typical attack below which a hit is ignored; a typical hit reads ~0.85, a strong one 1.
      *  Instant attack, `hitRelease` seconds of release. A sustained note counts only at its start. */
-    _hitEnvelope(st, e, prev, dt) {
+    _hitEnvelope(st, e, prev, dt, gateDb) {
       if (st.fast === undefined) { st.fast = e; st.slow = e; st.ref = 0.2; st.cur = 0; }
       st.fast += (e - st.fast) * (1 - Math.exp(-dt / 0.008));
       st.slow += (e - st.slow) * (1 - Math.exp(-dt / 0.09));
       const rise = Math.max(0, st.fast - st.slow);
+      // Level gate: below a minimum absolute loudness the band is mostly noise, and in dB units
+      // noise wobbles by tens of dB, so without this quiet passages produce phantom hits.
+      let gate = 1;
+      if (gateDb !== undefined) {
+        const levelDb = st.fast * (MAX_DB - MIN_DB) + MIN_DB - 2;   // fast envelope back to dBFS (tilt removed)
+        const t = clamp((levelDb - (gateDb - 3)) / 6, 0, 1);
+        gate = t * t * (3 - 2 * t);
+      }
       // Learn the typical attack: follow each attack to its peak; when it has clearly ended, fold
       // its size into a running average. Smaller attacks pull the reference down faster than big
       // ones push it up, so a dense section (kicks on top of bass) is recognised within a couple of
@@ -711,7 +720,7 @@
       const x = rise / st.ref;
       const thr = clamp(this.hitThreshold, 0, 0.95);
       let v = clamp((x - thr) / (1.15 - thr), 0, 1);
-      v = v * v * (3 - 2 * v);
+      v = v * v * (3 - 2 * v) * gate;
       st.raw = v;
       return v > prev ? v : prev + (v - prev) * (1 - Math.exp(-dt / this.hitRelease));
     }

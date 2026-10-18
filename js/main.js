@@ -119,6 +119,7 @@
     drive: { bass: 1, mid: 1, high: 1 },
     kickRelease: 0.18,
     kickThreshold: 0.35,
+    kickGate: -46,
     bandFx: { shake: 1, glow: 1, sparkle: 1 },
     effects: Object.assign({}, VIZ.EFFECT_DEFAULTS),
     sceneParams: {},
@@ -134,6 +135,7 @@
       { key: 'drive.mid', label: 'Mids → light & body', min: 0, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
       { key: 'drive.high', label: 'Highs → sparkle & detail', min: 0, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
       { key: 'kickThreshold', label: 'Kick threshold (% of a typical kick)', min: 0, max: 0.9, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+      { key: 'kickGate', label: 'Kick level gate (min bass loudness)', min: -80, max: -25, step: 1, fmt: (v) => Math.round(v) + ' dB' },
       { key: 'kickRelease', label: 'Kick decay (how long a hit shows)', min: 0.06, max: 0.6, step: 0.01, fmt: (v) => Math.round(v * 1000) + ' ms' },
       { key: 'bandFx.shake', label: 'Screen shake on kicks', min: 0, max: 2, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
       { key: 'bandFx.glow', label: 'Glow follows mids', min: 0, max: 2, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
@@ -321,6 +323,7 @@
       Object.assign(this.audio.drive, s.drive);
       this.audio.hitRelease = s.kickRelease || 0.18;
       this.audio.hitThreshold = s.kickThreshold === undefined ? 0.35 : s.kickThreshold;
+      this.audio.kickGateDb = s.kickGate === undefined ? -46 : s.kickGate;
       Object.assign(this.post.bands, s.bandFx);
       const colors = this.paletteColors();
       colors.forEach((hex, i) => this.paletteBase.set(hexToLinear(hex), i * 3));

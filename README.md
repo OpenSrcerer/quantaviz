@@ -31,8 +31,9 @@ reacts to change, not level: the attack of each hit in the 35–100 Hz kick band
 fast and a slow envelope of the band's dB level, so a kick riding on a loud bassline counts just
 like an isolated one), measured against the *typical* recent attack rather than the strongest,
 with a 2 dB noise floor, an instant attack and a short release. *Kick threshold* (default 35%)
-sets how small a hit may be relative to a typical one before it is ignored, *Kick decay* how long
-a hit shows. A typical hit reads about 0.85, a hard one 1, and a sustained note counts only when
+sets how small a hit may be relative to a typical one before it is ignored, *Kick level gate*
+(default −46 dBFS) the minimum bass loudness below which nothing counts (quiet passages are mostly
+noise, which wobbles wildly in dB), and *Kick decay* how long a hit shows. A typical hit reads about 0.85, a hard one 1, and a sustained note counts only when
 it starts. Onsets are detected
 per band too: kick drums shake, mid onsets flash the bodies, treble onsets sparkle. The *Band
 response* section of the settings drawer has a drive slider for each band and for each of the
