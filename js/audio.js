@@ -237,10 +237,11 @@
       // follows the note down. Scenes use it for their big visible bass response.
       this.kick = 0; this.midHit = 0; this.highHit = 0; this.kickRaw = 0;
       this.hitRelease = 0.18;   // seconds a hit takes to fade (user: Kick decay)
+      this.hitThreshold = 0.4;  // attacks below this fraction of the strongest recent one are ignored (user: Kick threshold)
       this._hit = {
-        bass: { peak: 4, last: undefined, raw: 0 },
-        mid: { peak: 4, last: undefined, raw: 0 },
-        high: { peak: 4, last: undefined, raw: 0 },
+        bass: { peak: 0.05, fast: undefined, slow: undefined, raw: 0 },
+        mid: { peak: 0.05, fast: undefined, slow: undefined, raw: 0 },
+        high: { peak: 0.05, fast: undefined, slow: undefined, raw: 0 },
       };
       this.recentBeats = new Float32Array(8).fill(-100); // bass beat timestamps (seconds, same clock as update's `now`)
       this.recentBeatAmp = new Float32Array(8);          // strength (0..1) of each of those hits
@@ -374,7 +375,7 @@
       if (this.mediaEl && !this.mediaEl.paused) this.mediaEl.pause();
       this.active = false;
       // Forget the hit detectors' last values so a new source doesn't start with a false hit.
-      for (const k of Object.keys(this._hit)) { this._hit[k].last = undefined; this._hit[k].peak = 4; this._hit[k].raw = 0; }
+      for (const k of Object.keys(this._hit)) { this._hit[k].fast = undefined; this._hit[k].slow = undefined; this._hit[k].peak = 0.05; this._hit[k].raw = 0; }
     }
 
     stop(reason) {
@@ -667,18 +668,22 @@
       this.bpm = this.bpm ? this.bpm + (bpm - this.bpm) * 0.3 : bpm;
     }
 
-    /** Hit envelope = the band's onset strength: the positive rate of change of its energy (the
-     *  attack of a hit), normalised by the strongest recent attack, with an instant attack and a
-     *  ~150 ms release. A sustained note counts only when it starts; its sustain reads as zero. */
+    /** Hit envelope = the band's onset strength. The attack of a hit is the gap between a fast
+     *  (8 ms) and a slow (60 ms) envelope of the band energy, which is steady across frame rates
+     *  and ignores jitter. It is normalised by the strongest recent attack and gated by
+     *  `hitThreshold`: attacks below that fraction of the strongest read 0, the strongest reads 1.
+     *  Instant attack, `hitRelease` seconds of release. A sustained note counts only at its start. */
     _hitEnvelope(st, e, prev, dt) {
-      const last = st.last === undefined ? e : st.last;
-      st.last = e;
-      const rate = Math.max(0, e - last) / Math.max(dt, 1e-3);          // energy units per second
-      // Reference peak: jumps to the strongest recent attack, decays over ~3 s, never below 4/s so
-      // quiet noise is not promoted to hits.
-      st.peak = Math.max(rate, (st.peak || 4) * Math.exp(-dt / 3.0), 4);
-      let v = clamp(rate / st.peak, 0, 1);
-      v = v * v * (3 - 2 * v);                                           // soften the knees
+      if (st.fast === undefined) { st.fast = e; st.slow = e; }
+      st.fast += (e - st.fast) * (1 - Math.exp(-dt / 0.008));
+      st.slow += (e - st.slow) * (1 - Math.exp(-dt / 0.06));
+      const rise = Math.max(0, st.fast - st.slow);
+      // Reference: the strongest recent attack, decaying over ~3 s, floored so noise never qualifies.
+      st.peak = Math.max(rise, (st.peak || 0.05) * Math.exp(-dt / 3.0), 0.05);
+      const x = rise / st.peak;
+      const thr = clamp(this.hitThreshold, 0, 0.95);
+      let v = clamp((x - thr) / (1 - thr), 0, 1);
+      v = v * v * (3 - 2 * v);
       st.raw = v;
       return v > prev ? v : prev + (v - prev) * (1 - Math.exp(-dt / this.hitRelease));
     }

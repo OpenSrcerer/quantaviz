@@ -326,6 +326,7 @@ void main() {
       this.chaos = 1;
       this.high = 0;
       this.idle = 0;
+      this.prevKick = 0;
       this.ptrOn = 0;
     }
 
@@ -372,11 +373,12 @@ void main() {
     _collide(beat, P) {
       beat = clamp(beat || 0, 0, 1);
       const asp = this.aspect;
-      const strong = beat > 0.85;
+      const strong = beat > 0.8;
       let cx, cy;
       if (strong) { cx = (Math.random() - 0.5) * 0.08; cy = (Math.random() - 0.5) * 0.08; }
       else { cx = -asp * (0.3 + Math.random() * 0.5); cy = Math.random() - 0.5; }
-      const n = 4 + Math.round(8 * beat * (P.multiplicity !== undefined ? P.multiplicity : 1));
+      // Burst size follows the hit: a weak idle collision makes a few tracks, a hard kick a spray.
+      const n = 2 + Math.round(11 * beat * (P.multiplicity !== undefined ? P.multiplicity : 1));
       const pNeutral = clamp(0.2 * this.chaos, 0, 0.6);
       for (let i = 0; i < n; i++) {
         const speed = 0.9 + Math.random() * 1.7;
@@ -488,9 +490,13 @@ void main() {
         s.age += dt;
         if (s.age >= s.life) this.stars.splice(i, 1);
       }
-      this.idle += dt;
-      if (audio.onset) { this._collide(audio.beat, P); this.idle = 0; }
-      else if (this.idle > 3.5) { this._collide(0.35, P); this.idle = 1.5; }   // keep a silent chamber alive
+      // Significant kicks spawn a collision sized by the hit (the kick envelope is already
+      // thresholded by the user's Kick threshold); the Spawn rate adds idle collisions on top.
+      const kick = audio.kick;
+      if (kick > 0.4 && this.prevKick <= 0.4) { this._collide(kick, P); this.idle = 0; }
+      this.prevKick = kick;
+      const spawnRate = pv('spawn', 0);
+      if (spawnRate > 0 && Math.random() < spawnRate * dt) this._collide(0.25 + 0.3 * Math.random(), P);
 
       // Physics: 2 substeps.
       this.nSeg = 0;
@@ -610,6 +616,7 @@ void main() {
       { key: 'multiplicity', label: 'Multiplicity', min: 0.3, max: 3, step: 0.05, value: 1 },
       { key: 'exposure', label: 'Exposure', min: 0.5, max: 6, step: 0.1, value: 1.8, fmt: (v) => v.toFixed(1) + ' s' },
       { key: 'chaos', label: 'Delta electrons & decays', min: 0, max: 2, step: 0.05, value: 1 },
+      { key: 'spawn', label: 'Idle spawn rate (0 = kicks only)', min: 0, max: 4, step: 0.1, value: 0, fmt: (v) => (v ? v.toFixed(1) + ' / s' : 'kicks only') },
     ],
     create: (ctx) => new ChamberScene(ctx),
   });
