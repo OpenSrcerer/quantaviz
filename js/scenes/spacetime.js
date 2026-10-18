@@ -30,7 +30,7 @@ float sheetHeight(vec2 p) {
   for (int i = 0; i < 16; i++) {
     if (i >= uMassCount) break;
     vec2 d = p - uMass[i].xy;
-    y -= uMass[i].z / sqrt(dot(d, d) + 0.025);
+    y -= uMass[i].z / sqrt(dot(d, d) + 0.012);
   }
   y *= uDepth * 0.11;
   // Gravitational waves ARE the bass: the height at radius r is the bass level from the moment that
@@ -300,12 +300,14 @@ void main() {
       gl.bindTexture(gl.TEXTURE_2D, null);
       const histHead = (this.histPos + 511) % 512 + this.histAcc / step;
 
-      // Steady wells that deepen moderately with bass hits; the big bass statement is the waves.
-      this.centralMass += ((0.28 + 0.15 * drift + 0.45 * kick) - this.centralMass) * (1 - Math.exp(-dt / 0.05));
+      // Wells deepen with the bass hit, scaled by its loudness (a loud drop digs deeper than a quiet
+      // verse) and by the Bass depth slider.
+      const dig = kick * (0.55 + 0.75 * audio.bass) * P.bassDepth;
+      this.centralMass += ((0.2 + 0.15 * drift + 0.5 * dig) - this.centralMass) * (1 - Math.exp(-dt / 0.05));
       this.massData[0] = 0; this.massData[1] = 0; this.massData[2] = this.centralMass; this.massData[3] = 0; mc++;
       for (const b of this.bodies) {
         b.phase += dt * speed * 0.75 * Math.pow(b.r, -1.5);
-        b.mass = (0.05 * drift + 0.14 + 0.18 * kick) * b.weight;  // wells: bass; the sprites' light: mids (shader)
+        b.mass = (0.05 * drift + 0.1 + 0.2 * dig) * b.weight;      // wells: bass; the sprites' light: mids (shader)
         b.x = Math.cos(b.phase) * b.r;
         b.z = Math.sin(b.phase) * b.r * b.ecc;
         const o = mc * 4;
@@ -428,6 +430,7 @@ void main() {
     blurb: 'A sheet of spacetime bent by orbiting bodies. The gravitational waves are the bass itself travelling outward: a kick is one ring, an 808 a band of them. Bodies glow with the mids. Press to drop a mass.',
     params: [
       { key: 'depth', label: 'Gravity well depth', min: 0, max: 2, step: 0.05, value: 1 },
+      { key: 'bassDepth', label: 'Bass depth (how far hits dig)', min: 0, max: 4, step: 0.05, value: 1.3 },
       { key: 'wave', label: 'Gravitational waves (bass)', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'speed', label: 'Orbit speed', min: 0, max: 3, step: 0.05, value: 1 },
       { key: 'bodies', label: 'Bodies (stars)', min: 1, max: 12, step: 1, value: 6, fmt: (v) => String(Math.round(v)) },

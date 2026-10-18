@@ -115,7 +115,7 @@ uniform float uKeep;           // 0.75 on injection frames, else 1.0
 uniform int uPkCount;
 uniform vec4 uPkA[3];          // xy = centre (grid uv), z = amplitude, w = sigma (physical units)
 uniform vec2 uPkK[3];          // wave vector (rad per physical unit)
-uniform vec2 uKick;            // phase gradient from window motion (rad per physical unit)
+uniform vec2 uBoost;           // phase gradient from window motion (rad per physical unit)
 
 void main() {
   ivec2 ip = ivec2(gl_FragCoord.xy);
@@ -125,7 +125,7 @@ void main() {
   vec2 psi = c.rg * uKeep;
 
   // Galilean boost: the wave sloshes opposite to the window motion.
-  float kp = dot(uKick, p * 256.0);
+  float kp = dot(uBoost, p * 256.0);
   float ck = cos(kp);
   float sk = sin(kp);
   psi = vec2(psi.x * ck - psi.y * sk, psi.x * sk + psi.y * ck);
@@ -388,7 +388,7 @@ void main() {
       ctx.setCommon(ip, audio, u);
       ip.f('uN', n).f('uKeep', keep).i('uPkCount', this.pkCount)
         .f('uBarrier', barrier).f2('uPtr', gx, gy).f('uPtrOn', this.ptrAmt)
-        .f2('uKick', kx, ky).i('uState', 2);
+        .f2('uBoost', kx, ky).i('uState', 2);
       const locA = ip.loc('uPkA');
       if (locA) gl.uniform4fv(locA, this.pkA);
       ip.f2v('uPkK', this.pkK);

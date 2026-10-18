@@ -232,7 +232,8 @@
 
       this.scene = null;
       this.sceneDef = null;
-      this.broken = new Set();
+      this.brokenAt = new Map();   // scene id -> time it last failed; retried after a minute
+      this.broken = { has: (id) => this.isBroken(id), add: (id) => this.brokenAt.set(id, performance.now() / 1000), [Symbol.iterator]: function* () { } };
       this.fade = 0;          // 0 = visible, 1 = black
       this.fadeDir = 0;
       this.pendingScene = null;
@@ -270,6 +271,13 @@
       if (params.has('mute')) this.setSetting('volume', 0);
 
       window.addEventListener('resize', () => this.resize());
+      // A lost GPU context (driver reset, sleep, display change) leaves WebGL dead: restart cleanly.
+      this.canvas.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        this.contextLost = true;
+        this.toast('Graphics context was lost. Restarting Quanta…', 'error', 4000);
+        setTimeout(() => location.reload(), 1500);
+      });
       document.addEventListener('visibilitychange', () => {
         this.last = 0;
         // Coming back from a throttled background spell: start at full quality again.
@@ -619,6 +627,12 @@
     }
 
     /* ---------------- scenes ---------------- */
+    isBroken(id) {
+      const t = this.brokenAt.get(id);
+      if (t === undefined) return false;
+      if (performance.now() / 1000 - t > 60) { this.brokenAt.delete(id); return false; }
+      return true;
+    }
     selectScene(id, immediate) {
       const def = VIZ.scenes.find((s) => s.id === id) || VIZ.scenes[0];
       if (!def) { this.toast('No scenes registered', 'error'); return; }
@@ -647,10 +661,11 @@
         this.scene = s;
       } catch (e) {
         console.error(`[quanta] scene "${def.id}" failed to initialise`, e);
-        this.broken.add(def.id);
-        this.toast(`Scene "${def.name}" failed: ${e.message}`, 'error', 6000);
+        this.brokenAt.set(def.id, performance.now() / 1000);
+        this.toast(`Scene "${def.name}" failed (${e.message}). Skipping it for a minute.`, 'error', 7000);
         this.scene = null;
-        const alt = VIZ.scenes.find((s) => !this.broken.has(s.id));
+        if (this.gl.isContextLost()) return;
+        const alt = VIZ.scenes.find((s) => !this.isBroken(s.id));
         if (alt) { this.settings.scene = alt.id; return this.instantiate(alt); }
       }
       $('#sceneName').textContent = def.name;
@@ -664,11 +679,12 @@
     }
     sceneCrashed(e) {
       console.error(`[quanta] scene "${this.sceneDef.id}" crashed while rendering`, e);
-      this.broken.add(this.sceneDef.id);
-      this.toast(`Scene "${this.sceneDef.name}" crashed: ${e.message}`, 'error', 6000);
+      this.brokenAt.set(this.sceneDef.id, performance.now() / 1000);
+      this.toast(`Scene "${this.sceneDef.name}" crashed (${e.message}). Skipping it for a minute.`, 'error', 7000);
       try { this.scene.dispose(); } catch (err) { /* ignore */ }
       this.scene = null;
-      const alt = VIZ.scenes.find((s) => !this.broken.has(s.id));
+      if (this.gl.isContextLost()) return;
+      const alt = VIZ.scenes.find((s) => !this.isBroken(s.id));
       if (alt) this.selectScene(alt.id, true);
     }
 
