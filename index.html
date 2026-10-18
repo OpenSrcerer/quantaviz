@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quanta — physics audio visualizer</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<!-- Start screen -->
+<div id="hero" class="overlay">
+  <div class="hero-card">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="4" fill="currentColor"/>
+        <ellipse cx="24" cy="24" rx="19" ry="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <ellipse cx="24" cy="24" rx="19" ry="7.5" fill="none" stroke="currentColor" stroke-width="1.6" transform="rotate(60 24 24)"/>
+        <ellipse cx="24" cy="24" rx="19" ry="7.5" fill="none" stroke="currentColor" stroke-width="1.6" transform="rotate(120 24 24)"/>
+      </svg>
+      <h1>Quanta</h1>
+    </div>
+    <p class="tag">A physics playground that listens to your desktop.</p>
+    <div class="sources">
+      <button class="src primary" data-src="desktop">
+        <strong>Desktop audio</strong>
+        <span>Whatever Windows is playing right now</span>
+      </button>
+      <button class="src" data-src="mic">
+        <strong>Microphone</strong>
+        <span>Live input, no playback</span>
+      </button>
+      <button class="src" data-src="file">
+        <strong>Audio file</strong>
+        <span>Or drop a file anywhere</span>
+      </button>
+      <button class="src" data-src="demo">
+        <strong>Demo track</strong>
+        <span>Built-in synth loop</span>
+      </button>
+    </div>
+    <p class="hint">Desktop audio: in the share dialog choose <b>Entire screen</b> and switch on <b>Share system audio</b>. Nothing is recorded or sent anywhere.</p>
+    <p class="hint small">Space next scene · 1–6 pick scene · P palette · S settings · F fullscreen · H hide interface</p>
+  </div>
+</div>
+
+<!-- Heads-up display -->
+<div id="hud" class="hidden">
+  <div class="hud-top">
+    <div class="pill" id="sourcePill">
+      <span class="dot"></span>
+      <span id="sourceLabel">No source</span>
+      <button class="link" id="btnSource" title="Change audio source">change</button>
+    </div>
+    <div class="pill subtle" id="bpmPill"><span id="bpmLabel">— bpm</span></div>
+    <div class="spacer"></div>
+    <button class="icon" id="btnSettings" title="Settings (S)" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="icon" id="btnFull" title="Fullscreen (F)" aria-label="Fullscreen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </div>
+  <div class="hud-bottom">
+    <button class="icon" id="btnPrev" title="Previous scene (←)" aria-label="Previous scene">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+    </button>
+    <div class="scene-name">
+      <span id="sceneName">—</span>
+      <span id="sceneBlurb"></span>
+    </div>
+    <button class="icon" id="btnNext" title="Next scene (Space)" aria-label="Next scene">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+  <div id="fps"></div>
+</div>
+
+<!-- Settings drawer -->
+<aside id="panel" class="hidden" aria-label="Settings">
+  <header>
+    <h2>Settings</h2>
+    <button class="icon" id="btnClosePanel" title="Close (Esc)" aria-label="Close settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </header>
+  <div class="panel-body">
+    <section>
+      <h3>Scene</h3>
+      <div id="sceneList" class="chips"></div>
+      <label class="row check"><input type="checkbox" id="autoCycle"><span>Auto-cycle scenes</span></label>
+      <div id="generalCycle"></div>
+    </section>
+    <section>
+      <h3>Palette</h3>
+      <div id="paletteList" class="swatches"></div>
+    </section>
+    <section>
+      <h3>Audio</h3>
+      <div id="generalAudio"></div>
+    </section>
+    <section>
+      <h3>Look</h3>
+      <div id="generalLook"></div>
+      <label class="row check"><input type="checkbox" id="autoQuality"><span>Adaptive quality (holds your display's refresh rate)</span></label>
+    </section>
+    <section id="sceneParamsSection">
+      <h3>Scene parameters</h3>
+      <div id="sceneParamList"></div>
+    </section>
+  </div>
+  <footer>
+    <button class="ghost" id="btnReset">Reset to defaults</button>
+  </footer>
+</aside>
+
+<div id="toast" class="hidden"></div>
+<div id="dropHint" class="hidden"><span>Drop an audio file</span></div>
+<input type="file" id="fileInput" accept="audio/*" hidden>
+
+<script src="js/gl.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/post.js"></script>
+<script src="js/main.js"></script>
+<script src="js/scenes/quarks.js"></script>
+<script src="js/scenes/spacetime.js"></script>
+<script src="js/scenes/wavefunction.js"></script>
+<script src="js/scenes/starburst.js"></script>
+<script src="js/scenes/chamber.js"></script>
+<script src="js/scenes/horizon.js"></script>
+</body>
+</html>

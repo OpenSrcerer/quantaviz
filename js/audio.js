@@ -1,0 +1,637 @@
+/* audio.js — audio capture + analysis.
+ * Sources: desktop (screen-share system audio), microphone, audio file, built-in demo synth.
+ * Produces per-frame features: 128 log-spaced bands (smoothed / raw / peak-hold), a 512-sample
+ * waveform, bass/mid/high energies, level, beat envelope + pulse, and a rough BPM estimate.
+ */
+(function () {
+  'use strict';
+  const VIZ = (window.VIZ = window.VIZ || {});
+
+  const NUM_BANDS = 128;
+  const WAVE_LEN = 512;
+  const FFT_SIZE = 2048;        // 43 ms window at 48 kHz: snappy, still ~23 Hz resolution
+  const F_MIN = 32;
+  const F_MAX = 16000;
+  const MIN_DB = -88;
+  const MAX_DB = -18;
+  const TILT_DB_PER_OCT = 2.6;   // pink-noise style compensation so highs are visible
+  const FLUX_HISTORY = 48;
+
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const mtof = (n) => 440 * Math.pow(2, (n - 69) / 12);
+
+  /* ------------------------------------------------------------------ */
+  /* Demo synth: a small sequenced synthwave loop so the visualizer can  */
+  /* be tried without any capture permission.                           */
+  /* ------------------------------------------------------------------ */
+  class DemoSynth {
+    constructor(ctx) {
+      this.ctx = ctx;
+      this.out = ctx.createGain();
+      this.out.gain.value = 0.8;
+      this.comp = ctx.createDynamicsCompressor();
+      this.comp.threshold.value = -14;
+      this.comp.ratio.value = 4;
+      this.comp.attack.value = 0.004;
+      this.comp.release.value = 0.12;
+      this.bus = ctx.createGain();
+      this.bus.gain.value = 0.9;
+      this.bus.connect(this.comp);
+      this.comp.connect(this.out);
+      this.noise = this._noiseBuffer();
+      this.bpm = 124;
+      this.step = 0;
+      this.next = 0;
+      this.timer = null;
+    }
+    get output() { return this.out; }
+    _noiseBuffer() {
+      const sr = this.ctx.sampleRate, len = sr * 2;
+      const buf = this.ctx.createBuffer(1, len, sr);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      return buf;
+    }
+    start() {
+      this.step = 0;
+      this.next = this.ctx.currentTime + 0.05;
+      this.timer = setInterval(() => this._tick(), 25);
+    }
+    stop() {
+      if (this.timer) clearInterval(this.timer);
+      this.timer = null;
+      try { this.out.disconnect(); } catch (e) { /* ignore */ }
+    }
+    _tick() {
+      const stepDur = 60 / this.bpm / 4;
+      // Background tabs throttle timers to ~1 s, so schedule further ahead there.
+      const ahead = document.hidden ? 1.4 : 0.2;
+      while (this.next < this.ctx.currentTime + ahead) {
+        this._playStep(this.step, this.next, stepDur);
+        this.step = (this.step + 1) % 128;
+        this.next += stepDur;
+      }
+    }
+    _env(gainNode, t, peak, decay, attack = 0.003) {
+      const g = gainNode.gain;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(0.0001, t);
+      g.linearRampToValueAtTime(peak, t + attack);
+      g.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+    }
+    _noiseHit(t, vel, decay, filterType, freq, q) {
+      const ctx = this.ctx;
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = filterType; f.frequency.value = freq; f.Q.value = q || 0.7;
+      const g = ctx.createGain();
+      this._env(g, t, vel, decay);
+      n.connect(f).connect(g).connect(this.bus);
+      n.start(t, Math.random() * 1.5);
+      n.stop(t + decay + 0.05);
+    }
+    _kick(t, vel) {
+      const ctx = this.ctx;
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(175, t);
+      o.frequency.exponentialRampToValueAtTime(44, t + 0.1);
+      const g = ctx.createGain();
+      this._env(g, t, vel, 0.4);
+      o.connect(g).connect(this.bus);
+      o.start(t); o.stop(t + 0.5);
+      this._noiseHit(t, vel * 0.3, 0.02, 'highpass', 2500);
+    }
+    _snare(t, vel) {
+      this._noiseHit(t, vel * 0.6, 0.18, 'bandpass', 1900, 0.8);
+      const ctx = this.ctx;
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(220, t);
+      o.frequency.exponentialRampToValueAtTime(120, t + 0.08);
+      const g = ctx.createGain();
+      this._env(g, t, vel * 0.35, 0.09);
+      o.connect(g).connect(this.bus);
+      o.start(t); o.stop(t + 0.15);
+    }
+    _hat(t, vel, decay) { this._noiseHit(t, vel, decay, 'highpass', 7500); }
+    _bass(t, note, dur) {
+      const ctx = this.ctx;
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = mtof(note);
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.Q.value = 7;
+      f.frequency.setValueAtTime(1500, t);
+      f.frequency.exponentialRampToValueAtTime(160, t + dur * 0.7);
+      const g = ctx.createGain();
+      this._env(g, t, 0.42, dur);
+      o.connect(f).connect(g).connect(this.bus);
+      o.start(t); o.stop(t + dur + 0.05);
+      const sub = ctx.createOscillator();
+      sub.type = 'sine';
+      sub.frequency.value = mtof(note - 12);
+      const sg = ctx.createGain();
+      this._env(sg, t, 0.38, dur);
+      sub.connect(sg).connect(this.bus);
+      sub.start(t); sub.stop(t + dur + 0.05);
+    }
+    _pad(t, notes, dur, bright) {
+      const ctx = this.ctx;
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.Q.value = 1.5;
+      f.frequency.setValueAtTime(bright ? 2600 : 700, t);
+      f.frequency.linearRampToValueAtTime(bright ? 900 : 1500, t + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.055, t + 0.35);
+      g.gain.setValueAtTime(0.055, t + dur - 0.3);
+      g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      f.connect(g).connect(this.bus);
+      for (const n of notes) {
+        for (const det of [-9, 8]) {
+          const o = ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = mtof(n);
+          o.detune.value = det;
+          o.connect(f);
+          o.start(t); o.stop(t + dur + 0.05);
+        }
+      }
+    }
+    _pluck(t, note, vel) {
+      const ctx = this.ctx;
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = mtof(note);
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.Q.value = 4;
+      f.frequency.setValueAtTime(3800, t);
+      f.frequency.exponentialRampToValueAtTime(500, t + 0.14);
+      const g = ctx.createGain();
+      this._env(g, t, vel, 0.24);
+      o.connect(f).connect(g).connect(this.bus);
+      o.start(t); o.stop(t + 0.3);
+    }
+    _playStep(step, t, dur) {
+      const s = step % 16;
+      const bar = Math.floor(step / 16) % 8;
+      const chords = [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 59], [55, 59, 62, 65]];
+      const chord = chords[bar % 4];
+      const breakdown = bar === 6;
+      const fill = bar === 7;
+      if (!breakdown) {
+        if (s % 4 === 0) this._kick(t, 1.0);
+        if (bar === 3 && s === 14) this._kick(t, 0.7);
+        if (fill && s >= 12) this._snare(t, 0.5 + (s - 12) * 0.15);
+      }
+      if (s === 4 || s === 12) this._snare(t, 1.0);
+      if (s % 2 === 0) this._hat(t, breakdown ? 0.1 : 0.22, 0.045); else this._hat(t, 0.09, 0.03);
+      if (s === 10) this._hat(t, 0.3, 0.22);
+      const bassPat = [1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0];
+      if (!breakdown && bassPat[s]) this._bass(t, chord[0] - 12 + (s === 14 ? 12 : 0), dur * 1.6);
+      if (s === 0) this._pad(t, chord, dur * 16, breakdown || fill);
+      if (s % 2 === 1) this._pluck(t, chord[((s >> 1) + (bar & 1)) % 4] + 12, 0.13 + (s === 7 ? 0.08 : 0));
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* AudioEngine                                                         */
+  /* ------------------------------------------------------------------ */
+  class AudioEngine {
+    constructor() {
+      this.ctx = null;
+      this.analyser = null;
+      this.monitor = null;   // to speakers (file + demo only)
+      this.silence = null;   // zero-gain sink that keeps the analyser pulled
+      this.node = null;      // current source node
+      this.stream = null;
+      this.mediaEl = null;
+      this.mediaNode = null;
+      this.demo = null;
+      this.sourceType = 'none';
+      this.sourceLabel = 'No source';
+      this.active = false;
+
+      this.bands = new Float32Array(NUM_BANDS);
+      this.bandsRaw = new Float32Array(NUM_BANDS);
+      this.peaks = new Float32Array(NUM_BANDS);
+      this.bandBytes = new Uint8Array(NUM_BANDS * 4);
+      this.wave = new Float32Array(WAVE_LEN);
+      this.waveBytes = new Uint8Array(WAVE_LEN);
+
+      this.bass = 0; this.mid = 0; this.high = 0; this.level = 0;
+      this.beat = 0; this.beatPulse = 0; this.onset = false; this.beatCount = 0;
+      this.recentBeats = new Float32Array(8).fill(-100); // timestamps (seconds, same clock as update's `now`)
+      this.bpm = 0;
+      this.gain = 1;
+      this.sensitivity = 1.0;
+      this.monitorVolume = 0.6;
+      this.silentFor = 0;
+
+      this._fft = null; this._time = null;
+      this._bLo = new Float32Array(NUM_BANDS);
+      this._bHi = new Float32Array(NUM_BANDS);
+      this._bC = new Float32Array(NUM_BANDS);
+      this._tilt = new Float32Array(NUM_BANDS);
+      this._norm = new Float32Array(NUM_BANDS);
+      this._prevNorm = new Float32Array(NUM_BANDS);
+      this._fluxHist = new Float32Array(FLUX_HISTORY);
+      this._fluxIdx = 0;
+      this._lastBeat = -10;
+      // Onset-strength envelope sampled at 100 Hz over 8 s, for tempo autocorrelation.
+      this._env = new Float32Array(800);
+      this._envLin = new Float32Array(800);
+      this._envPos = 0;
+      this._envAcc = 0;
+      this._envAccT = 0;
+      this._envFilled = 0;
+      this._bpmTimer = 0;
+      this._agcPeak = 0.6;
+      this._ranges = null;
+      this._listeners = {};
+    }
+
+    on(evt, fn) { (this._listeners[evt] = this._listeners[evt] || []).push(fn); return this; }
+    emit(evt, data) { (this._listeners[evt] || []).forEach((fn) => fn(data)); }
+
+    ensureContext() {
+      if (!this.ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AC({ latencyHint: 'interactive' });
+        this.analyser = this.ctx.createAnalyser();
+        this.analyser.fftSize = FFT_SIZE;
+        this.analyser.smoothingTimeConstant = 0;
+        this.silence = this.ctx.createGain();
+        this.silence.gain.value = 0;
+        this.analyser.connect(this.silence);
+        this.silence.connect(this.ctx.destination);
+        this.monitor = this.ctx.createGain();
+        this.monitor.gain.value = this.monitorVolume;
+        this.monitor.connect(this.ctx.destination);
+        this._fft = new Float32Array(this.analyser.frequencyBinCount);
+        this._time = new Float32Array(FFT_SIZE);
+        this._computeBandMap();
+      }
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      return this.ctx;
+    }
+
+    _computeBandMap() {
+      const binW = this.ctx.sampleRate / FFT_SIZE;
+      const ratio = F_MAX / F_MIN;
+      for (let k = 0; k < NUM_BANDS; k++) {
+        const f0 = F_MIN * Math.pow(ratio, k / NUM_BANDS);
+        const f1 = F_MIN * Math.pow(ratio, (k + 1) / NUM_BANDS);
+        this._bLo[k] = f0 / binW;
+        this._bHi[k] = f1 / binW;
+        this._bC[k] = Math.sqrt(f0 * f1) / binW;
+        this._tilt[k] = TILT_DB_PER_OCT * Math.log2(Math.sqrt(f0 * f1) / F_MIN);
+      }
+      const idx = (f) => clamp(Math.round(Math.log(f / F_MIN) / Math.log(ratio) * NUM_BANDS), 0, NUM_BANDS - 1);
+      this._ranges = {
+        bass: [idx(32), idx(150)],
+        mid: [idx(150), idx(2200)],
+        high: [idx(2200), idx(16000)],
+        flux: [idx(32), idx(260)],
+      };
+    }
+
+    setMonitorVolume(v) {
+      this.monitorVolume = v;
+      if (this.monitor) this.monitor.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
+    }
+
+    _detach() {
+      if (this.node) { try { this.node.disconnect(); } catch (e) { /* ignore */ } }
+      this.node = null;
+      if (this.stream) { this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
+      if (this.demo) { this.demo.stop(); this.demo = null; }
+      if (this.mediaEl && !this.mediaEl.paused) this.mediaEl.pause();
+      this.active = false;
+    }
+
+    stop(reason) {
+      this._detach();
+      this.sourceType = 'none';
+      this.sourceLabel = reason || 'Stopped';
+      this.emit('source', { type: 'none', label: this.sourceLabel });
+    }
+
+    _attachStream(stream, type, label) {
+      this._detach();
+      this.stream = stream;
+      this.node = this.ctx.createMediaStreamSource(stream);
+      this.node.connect(this.analyser);
+      this.sourceType = type;
+      this.sourceLabel = label;
+      this.active = true;
+      this.silentFor = 0;
+      this.emit('source', { type, label });
+    }
+
+    /** Desktop / system audio via the browser's screen-share picker. */
+    async useDesktop() {
+      this.ensureContext();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        throw new Error('Screen-share audio capture is not available in this browser. Use Edge or Chrome.');
+      }
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: 'monitor', frameRate: { ideal: 1, max: 5 }, width: { max: 640 }, height: { max: 360 } },
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 2 } },
+          systemAudio: 'include',
+          monitorTypeSurfaces: 'include',
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
+          preferCurrentTab: false,
+        });
+      } catch (e) {
+        if (e && (e.name === 'NotAllowedError' || e.name === 'AbortError')) throw new Error('Share dialog was cancelled.');
+        throw new Error('Could not start desktop capture: ' + (e && e.message ? e.message : e));
+      }
+      const audioTracks = stream.getAudioTracks();
+      if (!audioTracks.length) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw new Error('The shared source had no audio. Pick "Entire screen" and turn on "Share system audio".');
+      }
+      // The video track is only the vehicle for the audio permission. It is kept alive (disabled,
+      // tiny, ~1 fps) because some browsers end the whole capture when the video track stops.
+      stream.getVideoTracks().forEach((t) => { t.enabled = false; });
+      this._attachStream(stream, 'desktop', 'Desktop audio');
+      stream.getTracks().forEach((t) => t.addEventListener('ended', () => {
+        if (this.stream === stream) this.stop('Desktop sharing ended');
+      }));
+    }
+
+    async useMic() {
+      this.ensureContext();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Microphone capture is not available in this browser.');
+      }
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        });
+      } catch (e) {
+        throw new Error('Microphone access was denied or no microphone was found.');
+      }
+      this._attachStream(stream, 'mic', 'Microphone');
+      stream.getAudioTracks()[0].addEventListener('ended', () => {
+        if (this.stream === stream) this.stop('Microphone disconnected');
+      });
+    }
+
+    async useFile(file) {
+      this.ensureContext();
+      this._detach();
+      if (!this.mediaEl) {
+        this.mediaEl = document.createElement('audio');
+        this.mediaEl.loop = true;
+        this.mediaEl.crossOrigin = 'anonymous';
+        this.mediaNode = this.ctx.createMediaElementSource(this.mediaEl);
+      }
+      if (this._fileUrl) URL.revokeObjectURL(this._fileUrl);
+      this._fileUrl = URL.createObjectURL(file);
+      this.mediaEl.src = this._fileUrl;
+      this.mediaNode.connect(this.analyser);
+      this.mediaNode.connect(this.monitor);
+      this.node = this.mediaNode;
+      try {
+        await this.mediaEl.play();
+      } catch (e) {
+        this.node = null;
+        throw new Error('Could not play that file (' + (e && e.message ? e.message : 'unsupported format') + ').');
+      }
+      this.sourceType = 'file';
+      this.sourceLabel = file.name;
+      this.active = true;
+      this.silentFor = 0;
+      this.emit('source', { type: 'file', label: file.name });
+    }
+
+    useDemo() {
+      this.ensureContext();
+      this._detach();
+      this.demo = new DemoSynth(this.ctx);
+      this.demo.output.connect(this.analyser);
+      this.demo.output.connect(this.monitor);
+      this.node = this.demo.output;
+      this.demo.start();
+      this.sourceType = 'demo';
+      this.sourceLabel = 'Demo track';
+      this.active = true;
+      this.silentFor = 0;
+      this.emit('source', { type: 'demo', label: this.sourceLabel });
+    }
+
+    /** Pull fresh data and recompute features. dt in seconds, now in seconds. */
+    update(dt, now) {
+      dt = clamp(dt, 0.001, 0.1);
+      const decayB = Math.exp(-dt / 0.3);
+      const decayP = Math.exp(-dt / 0.11);
+      this.onset = false;
+      if (!this.active || !this.analyser) {
+        // Idle: let everything settle to zero.
+        const k = Math.exp(-dt / 0.25);
+        for (let i = 0; i < NUM_BANDS; i++) { this.bands[i] *= k; this.peaks[i] *= k; this.bandsRaw[i] *= k; }
+        this.bass *= k; this.mid *= k; this.high *= k; this.level *= k;
+        this.beat *= decayB; this.beatPulse *= decayP;
+        this.wave.fill(0);
+        this._packBytes();
+        return;
+      }
+      const an = this.analyser;
+      an.getFloatFrequencyData(this._fft);
+      an.getFloatTimeDomainData(this._time);
+
+      // --- raw log-spaced bands ---
+      const fft = this._fft, nb = fft.length;
+      let pk = 0;
+      for (let k = 0; k < NUM_BANDS; k++) {
+        const lo = this._bLo[k], hi = this._bHi[k];
+        let db;
+        if (hi - lo < 1.0) {
+          const c = this._bC[k];
+          const i = Math.min(nb - 2, Math.max(0, Math.floor(c)));
+          const f = clamp(c - i, 0, 1);
+          db = fft[i] * (1 - f) + fft[i + 1] * f;
+        } else {
+          let s = 0, n = 0;
+          const i0 = Math.floor(lo), i1 = Math.min(nb, Math.ceil(hi));
+          for (let i = i0; i < i1; i++) { s += fft[i]; n++; }
+          db = n ? s / n : -200;
+        }
+        if (!(db > -200)) db = -200;
+        let v = (db + this._tilt[k] - MIN_DB) / (MAX_DB - MIN_DB);
+        if (v < 0) v = 0;
+        this.bandsRaw[k] = v;
+        if (v > pk) pk = v;
+      }
+
+      // --- slow automatic gain so quiet and loud sources both fill the range ---
+      this._agcPeak = Math.max(pk, this._agcPeak * Math.exp(-dt / 6));
+      const targetGain = clamp(0.95 / Math.max(this._agcPeak, 0.2), 0.6, 3.5);
+      this.gain += (targetGain - this.gain) * (1 - Math.exp(-dt / 2.0));
+      const g = this.gain * this.sensitivity;
+
+      // --- normalise, smooth (fast attack / slower release), peak-hold ---
+      const aA = 1 - Math.exp(-dt / 0.022);
+      const aR = 1 - Math.exp(-dt / 0.11);
+      const norm = this._norm;
+      for (let k = 0; k < NUM_BANDS; k++) {
+        let v = this.bandsRaw[k] * g;
+        v = v / (1 + 0.18 * v);       // soft knee
+        if (v > 1) v = 1;
+        norm[k] = v;
+        const p = this.bands[k];
+        this.bands[k] = p + (v - p) * (v > p ? aA : aR);
+        this.peaks[k] = Math.max(this.peaks[k] - dt * 0.45, this.bands[k]);
+      }
+
+      // --- energies ---
+      const r = this._ranges;
+      const eBass = this._mean(norm, r.bass), eMid = this._mean(norm, r.mid), eHigh = this._mean(norm, r.high);
+      const aA2 = 1 - Math.exp(-dt / 0.03), aR2 = 1 - Math.exp(-dt / 0.14);
+      this.bass += (eBass - this.bass) * (eBass > this.bass ? aA2 : aR2);
+      this.mid += (eMid - this.mid) * (eMid > this.mid ? aA2 : aR2);
+      this.high += (eHigh - this.high) * (eHigh > this.high ? aA2 : aR2);
+
+      // --- waveform + level ---
+      const tm = this._time, stride = FFT_SIZE / WAVE_LEN;
+      let sq = 0;
+      for (let i = 0; i < FFT_SIZE; i++) sq += tm[i] * tm[i];
+      const rms = Math.sqrt(sq / FFT_SIZE);
+      const wg = Math.min(6, g * 1.6);
+      for (let i = 0; i < WAVE_LEN; i++) this.wave[i] = clamp(tm[i * stride] * wg, -1, 1);
+      let lv = rms * g * 2.2;
+      lv = lv / (1 + 0.3 * lv);
+      this.level += (lv - this.level) * (lv > this.level ? aA2 : aR2);
+      this.silentFor = rms < 0.0015 ? this.silentFor + dt : 0;
+
+      // --- onset / beat detection (spectral flux in the low bands) ---
+      let flux = 0;
+      for (let k = r.flux[0]; k <= r.flux[1]; k++) {
+        const d = norm[k] - this._prevNorm[k];
+        if (d > 0) flux += d;
+      }
+      flux /= (r.flux[1] - r.flux[0] + 1);
+      this._prevNorm.set(norm);
+      let mean = 0;
+      for (let i = 0; i < FLUX_HISTORY; i++) mean += this._fluxHist[i];
+      mean /= FLUX_HISTORY;
+      this._fluxHist[this._fluxIdx] = flux;
+      this._fluxIdx = (this._fluxIdx + 1) % FLUX_HISTORY;
+      const threshold = mean * 1.55 + 0.012;
+      this.beat *= decayB;
+      this.beatPulse *= decayP;
+      if (flux > threshold && now - this._lastBeat > 0.16 && this.bass > 0.08) {
+        const strength = clamp(0.55 + (flux - threshold) / (threshold + 1e-4) * 0.3, 0.55, 1);
+        this.onset = true;
+        this.beatCount++;
+        this.beat = Math.max(this.beat, strength);
+        this.beatPulse = 1;
+        this._lastBeat = now;
+        this.recentBeats.copyWithin(0, 1);
+        this.recentBeats[7] = now;
+      }
+      // Tempo envelope (max-pooled into 10 ms bins).
+      this._envAcc = Math.max(this._envAcc, flux);
+      this._envAccT += dt;
+      while (this._envAccT >= 0.01) {
+        this._env[this._envPos] = this._envAcc;
+        this._envPos = (this._envPos + 1) % this._env.length;
+        this._envFilled = Math.min(this._envFilled + 1, this._env.length);
+        this._envAccT -= 0.01;
+        this._envAcc = 0;
+      }
+      this._bpmTimer += dt;
+      if (this._bpmTimer > 1.5 && this._envFilled >= 400) { this._bpmTimer = 0; this._estimateTempo(); }
+      this._packBytes();
+    }
+
+    /** Tempo from the autocorrelation of the onset envelope (lags 70–180 bpm, with harmonic support). */
+    _estimateTempo() {
+      const N = this._envFilled, L = this._env.length, lin = this._envLin;
+      const start = (this._envPos - N + L) % L;
+      let mean = 0;
+      for (let i = 0; i < N; i++) { lin[i] = this._env[(start + i) % L]; mean += lin[i]; }
+      mean /= N;
+      for (let i = 0; i < N; i++) lin[i] -= mean;
+      const maxLag = Math.min(172, N >> 1);
+      const r = new Float32Array(maxLag + 1);
+      let r0 = 0;
+      for (let i = 0; i < N; i++) r0 += lin[i] * lin[i];
+      if (r0 < 1e-9) return;
+      for (let lag = 33; lag <= maxLag; lag++) {
+        let s = 0;
+        for (let i = 0; i + lag < N; i++) s += lin[i] * lin[i + lag];
+        r[lag] = s / (N - lag) / (r0 / N);
+      }
+      let best = 0, bestLag = 0;
+      for (let lag = 33; lag <= 86; lag++) {
+        let score = r[lag];
+        if (2 * lag <= maxLag) score += 0.5 * r[2 * lag];
+        if (3 * lag <= maxLag) score += 0.25 * r[3 * lag];
+        score *= 1 - 0.1 * Math.abs(Math.log(lag / 50));   // mild preference for ~120 bpm
+        if (score > best) { best = score; bestLag = lag; }
+      }
+      if (!bestLag || best < 0.08) return;
+      const bpm = 6000 / bestLag;
+      this.bpm = this.bpm ? this.bpm + (bpm - this.bpm) * 0.3 : bpm;
+    }
+
+    _mean(arr, range) {
+      let s = 0, n = 0;
+      for (let k = range[0]; k <= range[1]; k++) { s += arr[k]; n++; }
+      return n ? s / n : 0;
+    }
+
+    /** Tempo: score candidate periods (70–180 bpm) by how well inter-onset intervals fit multiples. */
+    _pushBeat(t) {
+      const bt = this._beatTimes;
+      bt.push(t);
+      if (bt.length > 32) bt.shift();
+      if (bt.length < 8) return;
+      const iv = [];
+      for (let i = 1; i < bt.length; i++) {
+        const d = bt[i] - bt[i - 1];
+        if (d > 0.12 && d < 2.2) iv.push(d);
+      }
+      if (iv.length < 6) return;
+      let bestScore = -1, bestT = 0.5;
+      for (let T = 0.333; T <= 0.86; T += 0.004) {
+        let s = 0;
+        for (let i = 0; i < iv.length; i++) {
+          const d = iv[i];
+          const n = Math.round(d / T);
+          if (n < 1 || n > 4) continue;
+          const err = (d - n * T) / (T * 0.07);
+          s += Math.exp(-err * err) / Math.sqrt(n);
+        }
+        s *= 1 - 0.12 * Math.abs(Math.log(T / 0.5));   // mild preference for ~120 bpm to break octave ties
+        if (s > bestScore) { bestScore = s; bestT = T; }
+      }
+      const bpm = 60 / bestT;
+      this.bpm = this.bpm ? this.bpm + (bpm - this.bpm) * 0.25 : bpm;
+    }
+
+    _packBytes() {
+      const bb = this.bandBytes;
+      for (let k = 0; k < NUM_BANDS; k++) {
+        bb[k * 4] = this.bands[k] * 255;
+        bb[k * 4 + 1] = this.bandsRaw[k] * 255 * this.gain * this.sensitivity > 255 ? 255 : this.bandsRaw[k] * 255 * this.gain * this.sensitivity;
+        bb[k * 4 + 2] = this.peaks[k] * 255;
+        bb[k * 4 + 3] = 255;
+      }
+      const wb = this.waveBytes;
+      for (let i = 0; i < WAVE_LEN; i++) wb[i] = (this.wave[i] * 0.5 + 0.5) * 255;
+    }
+  }
+
+  VIZ.AudioEngine = AudioEngine;
+  VIZ.AUDIO = { NUM_BANDS, WAVE_LEN };
+})();
