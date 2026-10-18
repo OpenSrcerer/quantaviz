@@ -15,10 +15,17 @@
 uniform vec4 uMass[8];      // x, z, mass, bandT
 uniform int uMassCount;
 uniform float uBeats[8];
-uniform float uBeatAmp[8];
 uniform float uWaveAmp;
 uniform float uDepth;
 uniform float uDrift;
+uniform sampler2D uWaveHist;   // rolling history of the bass (kick) envelope, 120 samples/s, 512 wide
+uniform float uHistHead;       // index of the newest sample
+const float WAVE_C = 1.25;     // wave speed, world units per second
+// The bass envelope as it was a given number of seconds ago.
+float bassAgo(float ago) {
+  float idx = uHistHead - ago * 120.0;
+  return texture(uWaveHist, vec2((idx + 0.5) / 512.0, 0.5)).r;
+}
 float sheetHeight(vec2 p) {
   float y = 0.0;
   for (int i = 0; i < 8; i++) {
@@ -27,17 +34,14 @@ float sheetHeight(vec2 p) {
     y -= uMass[i].z / sqrt(dot(d, d) + 0.025);
   }
   y *= uDepth * 0.11;
-  // Gravitational-wave fronts: launched only by bass hits, each as strong as the hit that made it.
+  // Gravitational waves ARE the bass: the ring at radius r carries the bass level from the moment
+  // that wave left the centre (r / c seconds ago). Kick = one ring, 808 = a band of rings, silence = flat.
   if (uWaveAmp > 0.001) {
     float r = length(p);
-    for (int i = 0; i < 8; i++) {
-      float age = uTime - uBeats[i];
-      if (age > 0.0 && age < 3.0) {
-        float front = age * 1.25;
-        float env = exp(-pow((r - front) / 0.22, 2.0)) * exp(-age * 1.1);
-        y += uWaveAmp * 0.07 * (0.25 + 1.1 * uBeatAmp[i]) * env * sin((r - front) * 38.0);
-      }
-    }
+    float ago = r / WAVE_C;
+    float h = bassAgo(ago);
+    float carrier = sin((uTime - ago) * 47.5);
+    y += uWaveAmp * 0.085 * h * carrier * exp(-r * 0.45) * smoothstep(0.0, 0.12, r);
   }
   return y;
 }`;
@@ -197,6 +201,11 @@ void main() {
       ];
       this.massData = new Float32Array(32);
       this.bodyData = new Float32Array(40);
+      // Bass history ring buffer feeding the waves (4.3 s at 120 Hz).
+      this.hist = new Uint8Array(512);
+      this.histPos = 0;
+      this.histAcc = 0;
+      this.histTex = ctx.createTexture({ width: 512, height: 1, internalFormat: gl.R8, format: gl.RED, type: gl.UNSIGNED_BYTE, filter: gl.LINEAR, wrap: gl.REPEAT, data: this.hist });
       this.vp = new Float32Array(16);
       this.shake = { x: 0, y: 0, vx: 0, vy: 0 };
       this.ptrMass = 0;
@@ -259,8 +268,22 @@ void main() {
       const drift = P.drift;
       const speed = P.speed * (0.55 * drift + 0.5 * audio.mid + 0.3 * audio.level);
       let mc = 0;
-      // Steady wells that deepen moderately with bass hits; the big bass statement is the wave fronts.
+      // Record the bass envelope at 120 Hz; the waves read it back delayed by distance.
       const kick = audio.kick;
+      this.histAcc += dt;
+      const step = 1 / 120;
+      while (this.histAcc >= step) {
+        this.hist[this.histPos] = Math.round(clamp(kick, 0, 1) * 255);
+        this.histPos = (this.histPos + 1) % 512;
+        this.histAcc -= step;
+      }
+      gl.bindTexture(gl.TEXTURE_2D, this.histTex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 512, 1, gl.RED, gl.UNSIGNED_BYTE, this.hist);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      const histHead = (this.histPos + 511) % 512 + this.histAcc / step;
+
+      // Steady wells that deepen moderately with bass hits; the big bass statement is the waves.
       this.centralMass += ((0.28 + 0.15 * drift + 0.45 * kick) - this.centralMass) * (1 - Math.exp(-dt / 0.05));
       this.massData[0] = 0; this.massData[1] = 0; this.massData[2] = this.centralMass; this.massData[3] = 0; mc++;
       for (const b of this.bodies) {
@@ -324,7 +347,7 @@ void main() {
       const setHeight = (p) => {
         ctx.setCommon(p, audio, u);
         p.m4('uViewProj', this.vp).f4v('uMass', this.massData).i('uMassCount', mc)
-          .fv('uBeats', audio.recentBeats).fv('uBeatAmp', audio.recentBeatAmp)
+          .tex('uWaveHist', this.histTex).f('uHistHead', histHead)
           .f('uWaveAmp', P.wave).f('uDepth', P.depth).f('uDrift', drift);
       };
 
@@ -378,16 +401,17 @@ void main() {
       if (this.vao) { gl.deleteVertexArray(this.vao); gl.deleteBuffer(this.vbo); gl.deleteBuffer(this.lineIbo); gl.deleteBuffer(this.fillIbo); }
       gl.deleteVertexArray(this.bodyVao);
       gl.deleteBuffer(this.bodyBuf);
+      gl.deleteTexture(this.histTex);
     }
   }
 
   VIZ.registerScene({
     id: 'spacetime',
     name: 'Spacetime Fabric',
-    blurb: 'A sheet of spacetime bent by orbiting bodies. Only bass hits move it: each kick launches a gravitational wave as strong as the hit. Bodies glow with the mids. Press to drop a mass.',
+    blurb: 'A sheet of spacetime bent by orbiting bodies. The gravitational waves are the bass itself travelling outward: a kick is one ring, an 808 a band of them. Bodies glow with the mids. Press to drop a mass.',
     params: [
       { key: 'depth', label: 'Gravity well depth', min: 0, max: 2, step: 0.05, value: 1 },
-      { key: 'wave', label: 'Gravitational waves on bass hits', min: 0, max: 2, step: 0.05, value: 1 },
+      { key: 'wave', label: 'Gravitational waves (bass)', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'speed', label: 'Orbit speed', min: 0, max: 3, step: 0.05, value: 1 },
       { key: 'drift', label: 'Idle motion (without music)', min: 0, max: 1, step: 0.01, value: 0 },
       { key: 'grid', label: 'Grid density', min: 48, max: 192, step: 16, value: 112, fmt: (v) => v + ' × ' + v },
