@@ -632,8 +632,9 @@
         this.recentBeatAmp.copyWithin(0, 1);
         this.recentBeatAmp[7] = Math.max(this._hit.bass.raw || 0, this.kick, strength * 0.6);
       }
-      // Tempo envelope (max-pooled into 10 ms bins).
-      this._envAcc = Math.max(this._envAcc, flux);
+      // Tempo envelope (max-pooled into 10 ms bins) from the kick onset signal, which is far cleaner
+      // than broadband bass flux (no bassline notes in it).
+      this._envAcc = Math.max(this._envAcc, this._hit.bass.raw || 0);
       this._envAccT += dt;
       while (this._envAccT >= 0.01) {
         this._env[this._envPos] = this._envAcc;
@@ -675,7 +676,12 @@
       }
       if (!bestLag || best < 0.08) return;
       const bpm = 6000 / bestLag;
-      this.bpm = this.bpm ? this.bpm + (bpm - this.bpm) * 0.3 : bpm;
+      // Only change the reading when two consecutive estimates agree (within 3%), so octave
+      // flips and one noisy window don't make the counter jump around.
+      if (this._bpmCandidate && Math.abs(bpm - this._bpmCandidate) < this._bpmCandidate * 0.03) {
+        this.bpm = this.bpm && Math.abs(bpm - this.bpm) < this.bpm * 0.03 ? this.bpm + (bpm - this.bpm) * 0.3 : bpm;
+      }
+      this._bpmCandidate = bpm;
     }
 
     /** Hit envelope = the band's onset strength. The attack of a hit is the gap between a fast

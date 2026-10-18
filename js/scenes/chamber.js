@@ -327,6 +327,9 @@ void main() {
       this.high = 0;
       this.idle = 0;
       this.prevKick = 0;
+      this.kickMax = 0;
+      this.kickFired = false;
+      this.sawRise = false;
       this.ptrOn = 0;
     }
 
@@ -347,7 +350,7 @@ void main() {
       const tr = {
         x, y, vx, vy, sp, q, t, age: 0,
         ex: x, ey: y, es: sp, dist: 0,       // last emitted segment end, its speed, path length so far
-        k: 1, loss: 1, maxAge: 6, decayAt: 0, deltaAt: -1, dead: false,
+        k: 1, loss: 1, maxAge: 3.5, decayAt: 0, deltaAt: -1, dead: false,
       };
       // Highs: delta electrons (tight little spirals) spin off more often when the treble is busy.
       if (q !== 0 && Math.random() < 0.1 * this.chaos * (0.4 + 1.8 * this.high)) tr.deltaAt = 0.15 + Math.random() * 0.9;
@@ -366,23 +369,26 @@ void main() {
     }
 
     _star(x, y, size, tint) {
-      this.stars.push({ x, y, size, tint, age: 0, life: 0.4, rot: Math.random() * TAU });
+      this.stars.push({ x, y, size, tint, age: 0, life: 0.55, rot: Math.random() * TAU });
       if (this.stars.length > MAX_STARS) this.stars.shift();
     }
 
-    _collide(beat, P) {
+    /** A collision. Kick-triggered ones (`center`) explode from the middle in every direction so
+     *  each hit reads as one event; idle ones enter from the left edge like a beam. */
+    _collide(beat, P, center) {
       beat = clamp(beat || 0, 0, 1);
       const asp = this.aspect;
-      const strong = beat > 0.8;
+      const strong = center === undefined ? beat > 0.75 : !!center;
       let cx, cy;
       if (strong) { cx = (Math.random() - 0.5) * 0.08; cy = (Math.random() - 0.5) * 0.08; }
       else { cx = -asp * (0.3 + Math.random() * 0.5); cy = Math.random() - 0.5; }
-      // Burst size follows the hit: a weak idle collision makes a few tracks, a hard kick a spray.
-      const n = 2 + Math.round(11 * beat * (P.multiplicity !== undefined ? P.multiplicity : 1));
+      // Burst size and speed follow the hit: a weak idle collision makes a few slow tracks, a hard
+      // kick a fast spray.
+      const n = 3 + Math.round(13 * beat * (P.multiplicity !== undefined ? P.multiplicity : 1));
       const pNeutral = clamp(0.2 * this.chaos, 0, 0.6);
       for (let i = 0; i < n; i++) {
-        const speed = 0.9 + Math.random() * 1.7;
-        // Forward cone (mostly +x, +-50 deg); the strong centre events fly out in every direction.
+        const speed = (0.9 + Math.random() * 1.7) * (0.75 + 0.5 * beat);
+        // Centre events fly out in every direction; edge events in a forward cone (mostly +x, +-50 deg).
         const a = strong ? Math.random() * TAU : (Math.random() + Math.random() - 1) * 0.8727;
         const neutral = Math.random() < pNeutral;
         const q = neutral ? 0 : (Math.random() < 0.5 ? 1 : -1);
@@ -391,7 +397,7 @@ void main() {
         if (neutral) tr.decayAt = 0.2 + Math.random() * 0.5;
       }
       this._flush();
-      this._star(cx, cy, 0.05 + 0.02 * beat, 0.95);
+      this._star(cx, cy, 0.04 + 0.09 * beat, 0.95);     // the flash at the vertex scales with the hit
     }
 
     // Neutral V0 decay: two opposite charges with the parent's velocity +- a perpendicular kick.
@@ -490,13 +496,23 @@ void main() {
         s.age += dt;
         if (s.age >= s.life) this.stars.splice(i, 1);
       }
-      // Significant kicks spawn a collision sized by the hit (the kick envelope is already
-      // thresholded by the user's Kick threshold); the Spawn rate adds idle collisions on top.
+      // Significant kicks spawn a collision sized by the hit. Wait for the envelope's peak (it rises
+      // over a few frames) so the burst is sized by the whole hit, not by the first frame above
+      // threshold; the Spawn rate adds idle collisions on top.
       const kick = audio.kick;
-      if (kick > 0.4 && this.prevKick <= 0.4) { this._collide(kick, P); this.idle = 0; }
+      // Only a RISE can arm a hit (a falling envelope is never mistaken for a peak).
+      if (kick > this.prevKick + 1e-3) { this.sawRise = true; if (kick > this.kickMax) this.kickMax = kick; }
+      if (this.sawRise && !this.kickFired && this.kickMax > 0.35 && kick < this.kickMax * 0.97) {
+        this._collide(this.kickMax, P, true);
+        this.kickFired = true;
+        this.idle = 0;
+      }
+      // Re-arm once the envelope has fallen to half its last peak (small bassline onsets between
+      // kicks must not keep it armed-off); the next rise starts a fresh peak.
+      if (kick < this.kickMax * 0.5) { this.kickMax = 0; this.kickFired = false; this.sawRise = false; }
       this.prevKick = kick;
       const spawnRate = pv('spawn', 0);
-      if (spawnRate > 0 && Math.random() < spawnRate * dt) this._collide(0.25 + 0.3 * Math.random(), P);
+      if (spawnRate > 0 && Math.random() < spawnRate * dt) this._collide(0.25 + 0.3 * Math.random(), P, false);
 
       // Physics: 2 substeps.
       this.nSeg = 0;
@@ -534,7 +550,7 @@ void main() {
 
       // --- pass 1: fade the previous exposure into the other accumulation target ---
       const src = this.acc[this.cur], dst = this.acc[1 - this.cur];
-      const exposure = Math.max(0.1, pv('exposure', 1.8));
+      const exposure = Math.max(0.1, pv('exposure', 0.9));
       dst.bind();
       gl.disable(gl.BLEND);
       const fp = this.progFade.use();
@@ -614,7 +630,7 @@ void main() {
     params: [
       { key: 'field', label: 'Magnetic field', min: 0.2, max: 3, step: 0.01, value: 1 },
       { key: 'multiplicity', label: 'Multiplicity', min: 0.3, max: 3, step: 0.05, value: 1 },
-      { key: 'exposure', label: 'Exposure', min: 0.5, max: 6, step: 0.1, value: 1.8, fmt: (v) => v.toFixed(1) + ' s' },
+      { key: 'exposure', label: 'Exposure', min: 0.3, max: 6, step: 0.1, value: 0.9, fmt: (v) => v.toFixed(1) + ' s' },
       { key: 'chaos', label: 'Delta electrons & decays', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'spawn', label: 'Idle spawn rate (0 = kicks only)', min: 0, max: 4, step: 0.1, value: 0, fmt: (v) => (v ? v.toFixed(1) + ' / s' : 'kicks only') },
     ],
