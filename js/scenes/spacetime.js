@@ -12,9 +12,8 @@
   const EXTENT = 1.6;
 
   const HEIGHT_GLSL = `
-uniform vec4 uMass[8];      // x, z, mass, bandT
+uniform vec4 uMass[16];     // x, z, mass, bandT
 uniform int uMassCount;
-uniform float uBeats[8];
 uniform float uWaveAmp;
 uniform float uDepth;
 uniform float uDrift;
@@ -28,20 +27,21 @@ float bassAgo(float ago) {
 }
 float sheetHeight(vec2 p) {
   float y = 0.0;
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 16; i++) {
     if (i >= uMassCount) break;
     vec2 d = p - uMass[i].xy;
     y -= uMass[i].z / sqrt(dot(d, d) + 0.025);
   }
   y *= uDepth * 0.11;
-  // Gravitational waves ARE the bass: the ring at radius r carries the bass level from the moment
-  // that wave left the centre (r / c seconds ago). Kick = one ring, 808 = a band of rings, silence = flat.
+  // Gravitational waves ARE the bass: the height at radius r is the bass level from the moment that
+  // wave left the centre (r / c seconds ago), as a crest with a shallow trough trailing it. No carrier,
+  // so one hit is exactly one ring and the gap between rings is the time between hits.
   if (uWaveAmp > 0.001) {
     float r = length(p);
     float ago = r / WAVE_C;
-    float h = bassAgo(ago);
-    float carrier = sin((uTime - ago) * 47.5);
-    y += uWaveAmp * 0.085 * h * carrier * exp(-r * 0.45) * smoothstep(0.0, 0.12, r);
+    float crest = bassAgo(ago);
+    float trough = bassAgo(ago + 0.1);
+    y += uWaveAmp * 0.08 * (crest - 0.45 * trough) * exp(-r * 0.4) * smoothstep(0.0, 0.1, r);
   }
   return y;
 }`;
@@ -183,7 +183,7 @@ void main() {
       this.bodyVao = gl.createVertexArray();
       gl.bindVertexArray(this.bodyVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.bodyBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, 8 * 5 * 4, gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, 16 * 5 * 4, gl.DYNAMIC_DRAW);
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 20, 0);
       gl.enableVertexAttribArray(1);
@@ -191,16 +191,10 @@ void main() {
       gl.bindVertexArray(null);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
-      this.bodies = [
-        { r: 0.5, phase: 0.3, bandT: 0.1, ecc: 0.8, weight: 1.0 },
-        { r: 0.72, phase: 2.1, bandT: 0.24, ecc: 0.9, weight: 0.8 },
-        { r: 0.95, phase: 4.0, bandT: 0.38, ecc: 0.75, weight: 1.1 },
-        { r: 1.15, phase: 1.2, bandT: 0.52, ecc: 0.85, weight: 0.7 },
-        { r: 0.38, phase: 5.0, bandT: 0.68, ecc: 0.95, weight: 0.6 },
-        { r: 1.35, phase: 3.3, bandT: 0.84, ecc: 0.8, weight: 0.9 },
-      ];
-      this.massData = new Float32Array(32);
-      this.bodyData = new Float32Array(40);
+      this.bodies = [];
+      this._setBodyCount(6);
+      this.massData = new Float32Array(64);
+      this.bodyData = new Float32Array(80);
       // Bass history ring buffer feeding the waves (4.3 s at 120 Hz).
       this.hist = new Uint8Array(512);
       this.histPos = 0;
@@ -212,6 +206,25 @@ void main() {
       this.ptrPos = [0, 0];
       this.centralMass = 0.3;
       this._buildGrid(112);
+    }
+
+    /** Deterministic orbit set: adding bodies appends, removing trims, existing orbits are untouched. */
+    _setBodyCount(n) {
+      n = clamp(Math.round(n), 1, 12);
+      while (this.bodies.length > n) this.bodies.pop();
+      while (this.bodies.length < n) {
+        const i = this.bodies.length;
+        const f = (k) => ((i + 1) * k) % 1;              // cheap deterministic spread
+        this.bodies.push({
+          r: 0.38 + 1.0 * f(0.618),
+          phase: i * 2.399,
+          ecc: 0.75 + 0.2 * f(0.37),
+          weight: 0.6 + 0.5 * f(0.71),
+          bandT: f(0.5) * 0.9 + 0.05,
+        });
+      }
+      // Spread the bodies' mid bands evenly so each one lights up with a different part of the mix.
+      this.bodies.forEach((b, i) => { b.bandT = (i + 0.5) / this.bodies.length; });
     }
 
     _buildGrid(n) {
@@ -263,17 +276,21 @@ void main() {
       const dt = Math.min(u.dt, 0.05);
       const grid = clamp(Math.round(P.grid / 16) * 16, 48, 192);
       if (grid !== this.n) this._buildGrid(grid);
+      if (Math.round(P.bodies) !== this.bodies.length) this._setBodyCount(P.bodies);
 
       // Orbits (Kepler: angular speed ~ r^-1.5). With idle motion at 0 nothing moves without music.
       const drift = P.drift;
       const speed = P.speed * (0.55 * drift + 0.5 * audio.mid + 0.3 * audio.level);
       let mc = 0;
-      // Record the bass envelope at 120 Hz; the waves read it back delayed by distance.
+      // Record the bass hit level at 120 Hz (short release, so each hit is a crisp ring); the waves
+      // read it back delayed by distance.
       const kick = audio.kick;
+      const raw = audio.kickRaw || 0;
+      this.waveEnv = (this.waveEnv || 0) + (raw - (this.waveEnv || 0)) * (1 - Math.exp(-dt / (raw > (this.waveEnv || 0) ? 0.008 : 0.06)));
       this.histAcc += dt;
       const step = 1 / 120;
       while (this.histAcc >= step) {
-        this.hist[this.histPos] = Math.round(clamp(kick, 0, 1) * 255);
+        this.hist[this.histPos] = Math.round(clamp(this.waveEnv, 0, 1) * 255);
         this.histPos = (this.histPos + 1) % 512;
         this.histAcc -= step;
       }
@@ -328,7 +345,7 @@ void main() {
           this.ptrPos[1] = clamp(eye[2] + dir[2] * t, -EXTENT, EXTENT);
         }
       }
-      if (this.ptrMass > 0.01 && mc < 8) {
+      if (this.ptrMass > 0.01 && mc < 16) {
         const o = mc * 4;
         this.massData[o] = this.ptrPos[0]; this.massData[o + 1] = this.ptrPos[1]; this.massData[o + 2] = 0.7 * this.ptrMass; this.massData[o + 3] = 0.5;
         mc++;
@@ -413,6 +430,7 @@ void main() {
       { key: 'depth', label: 'Gravity well depth', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'wave', label: 'Gravitational waves (bass)', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'speed', label: 'Orbit speed', min: 0, max: 3, step: 0.05, value: 1 },
+      { key: 'bodies', label: 'Bodies (stars)', min: 1, max: 12, step: 1, value: 6, fmt: (v) => String(Math.round(v)) },
       { key: 'drift', label: 'Idle motion (without music)', min: 0, max: 1, step: 0.01, value: 0 },
       { key: 'grid', label: 'Grid density', min: 48, max: 192, step: 16, value: 112, fmt: (v) => v + ' × ' + v },
     ],

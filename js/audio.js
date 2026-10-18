@@ -235,7 +235,7 @@
       // Range-normalised hit envelopes: 0 at the band's recent quiet level, 1 at its recent loud
       // level, fast attack / ~150 ms release. `kick` is the bass one: an 808 pushes it to 1 and it
       // follows the note down. Scenes use it for their big visible bass response.
-      this.kick = 0; this.midHit = 0; this.highHit = 0;
+      this.kick = 0; this.midHit = 0; this.highHit = 0; this.kickRaw = 0;
       this._hit = {
         bass: { floor: 0.2, peak: 0.6 },
         mid: { floor: 0.2, peak: 0.6 },
@@ -567,6 +567,7 @@
       this.mid += (eMid - this.mid) * (eMid > this.mid ? aA2 : aR2);
       this.high += (eHigh - this.high) * (eHigh > this.high ? aA2 : aR2);
       this.kick = this._hitEnvelope(this._hit.bass, eBass, this.kick, dt);
+      this.kickRaw = this._hit.bass.raw;      // same normalisation, no release: the instantaneous hit level
       this.midHit = this._hitEnvelope(this._hit.mid, eMid, this.midHit, dt);
       this.highHit = this._hitEnvelope(this._hit.high, eHigh, this.highHit, dt);
 
