@@ -17,6 +17,7 @@ uniform int uMassCount;
 uniform float uBeats[8];
 uniform float uWaveAmp;
 uniform float uDepth;
+uniform float uDrift;
 float sheetHeight(vec2 p) {
   float y = 0.0;
   for (int i = 0; i < 8; i++) {
@@ -26,14 +27,16 @@ float sheetHeight(vec2 p) {
   }
   y *= uDepth * 0.11;
   float r = length(p);
+  // Bass only: kicks launch gravitational-wave fronts, sustained bass keeps the sheet undulating.
   for (int i = 0; i < 8; i++) {
     float age = uTime - uBeats[i];
     if (age > 0.0 && age < 3.0) {
       float front = age * 1.25;
       float env = exp(-pow((r - front) / 0.22, 2.0)) * exp(-age * 1.1);
-      y += uWaveAmp * 0.07 * (0.4 + 1.2 * uBass) * env * sin((r - front) * 38.0);   // bass: motion
+      y += uWaveAmp * 0.07 * (0.3 * uDrift + 1.3 * uBass) * env * sin((r - front) * 38.0);
     }
   }
+  y += uWaveAmp * 0.035 * uBass * uBass * exp(-r * 0.6) * sin(r * 22.0 - uTime * 7.0);
   return y;
 }`;
 
@@ -250,15 +253,16 @@ void main() {
       const grid = clamp(Math.round(P.grid / 16) * 16, 48, 192);
       if (grid !== this.n) this._buildGrid(grid);
 
-      // Orbits (Kepler: angular speed ~ r^-1.5).
-      const speed = P.speed * (0.55 + 0.6 * audio.mid);
+      // Orbits (Kepler: angular speed ~ r^-1.5). With idle motion at 0 nothing moves without music.
+      const drift = P.drift;
+      const speed = P.speed * (0.55 * drift + 0.5 * audio.mid + 0.3 * audio.level);
       let mc = 0;
-      this.centralMass += ((0.25 + 1.1 * audio.bass) - this.centralMass) * (1 - Math.exp(-dt / 0.06));
+      this.centralMass += ((0.06 + 0.2 * drift + 1.1 * audio.bass) - this.centralMass) * (1 - Math.exp(-dt / 0.06));
       this.massData[0] = 0; this.massData[1] = 0; this.massData[2] = this.centralMass; this.massData[3] = 0; mc++;
       for (const b of this.bodies) {
         b.phase += dt * speed * 0.75 * Math.pow(b.r, -1.5);
         const e = audio.bandMid(b.bandT);              // mids: each body weighs as much as its mid band
-        b.mass = 0.05 + 0.5 * Math.pow(e, 1.4);
+        b.mass = 0.05 * drift + 0.5 * Math.pow(e, 1.4);
         b.x = Math.cos(b.phase) * b.r;
         b.z = Math.sin(b.phase) * b.r * b.ecc;
         const o = mc * 4;
@@ -271,8 +275,8 @@ void main() {
       sk.vx += (-u.motion.vx * 0.0012 - sk.x * 40 - sk.vx * 7) * dt;
       sk.vy += (u.motion.vy * 0.0012 - sk.y * 40 - sk.vy * 7) * dt;
       sk.x += sk.vx * dt; sk.y += sk.vy * dt;
-      const az = u.time * 0.07 + sk.x * 0.6;
-      const el = 0.5 + 0.1 * Math.sin(u.time * 0.19) + sk.y * 0.6;
+      const az = u.time * (0.03 + 0.05 * drift) + sk.x * 0.6;
+      const el = 0.5 + drift * 0.1 * Math.sin(u.time * 0.19) + sk.y * 0.6;
       const dist = 2.9 + (u.aspect < 1 ? 0.9 : 0);
       const eye = [Math.cos(az) * Math.cos(el) * dist, Math.sin(el) * dist, Math.sin(az) * Math.cos(el) * dist];
       const view = mat4.lookAt(eye, [0, -0.1, 0], [0, 1, 0]);
@@ -317,7 +321,7 @@ void main() {
       const setHeight = (p) => {
         ctx.setCommon(p, audio, u);
         p.m4('uViewProj', this.vp).f4v('uMass', this.massData).i('uMassCount', mc)
-          .fv('uBeats', audio.recentBeats).f('uWaveAmp', P.wave).f('uDepth', P.depth);
+          .fv('uBeats', audio.recentBeats).f('uWaveAmp', P.wave).f('uDepth', P.depth).f('uDrift', drift);
       };
 
       // --- draw ---
@@ -376,11 +380,12 @@ void main() {
   VIZ.registerScene({
     id: 'spacetime',
     name: 'Spacetime Fabric',
-    blurb: 'Six bodies on Kepler orbits, each weighing as much as its frequency band, bend a sheet of spacetime; beats send gravitational waves across it. Press to drop a mass.',
+    blurb: 'Six bodies on Kepler orbits, each weighing as much as its mid band, bend a sheet of spacetime; only the bass moves it: kicks send gravitational waves, sustained bass makes it undulate. Press to drop a mass.',
     params: [
       { key: 'depth', label: 'Gravity well depth', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'wave', label: 'Gravitational waves', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'speed', label: 'Orbit speed', min: 0, max: 3, step: 0.05, value: 1 },
+      { key: 'drift', label: 'Idle motion (without music)', min: 0, max: 1, step: 0.01, value: 0 },
       { key: 'grid', label: 'Grid density', min: 48, max: 192, step: 16, value: 112, fmt: (v) => v + ' × ' + v },
     ],
     create: (ctx) => new SpacetimeScene(ctx),

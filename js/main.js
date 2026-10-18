@@ -225,6 +225,10 @@
       this.paletteBase = new Float32Array(12);
       this.paletteTarget = new Float32Array(12);
       this.hueOffset = 0;
+      this.paletteTau = 0.35;
+      // Live effect values ease toward the settings; discrete modes cross-fade through a mix.
+      this.fx = Object.assign({}, VIZ.EFFECT_DEFAULTS, { mirrorMode: 0, mirrorMix: 0, kaleidoN: 0, kaleidoMix: 0 });
+      this.fxTau = 1.2;
 
       this.scene = null;
       this.sceneDef = null;
@@ -266,7 +270,11 @@
       if (params.has('mute')) this.setSetting('volume', 0);
 
       window.addEventListener('resize', () => this.resize());
-      document.addEventListener('visibilitychange', () => { this.last = 0; });
+      document.addEventListener('visibilitychange', () => {
+        this.last = 0;
+        // Coming back from a throttled background spell: start at full quality again.
+        if (!document.hidden) { this.autoScale = 1; this.qualityCooldown = 2; this.frameAvg = this.refreshMs; }
+      });
       requestAnimationFrame((t) => this.frame(t));
     }
 
@@ -281,6 +289,8 @@
     }
     setSetting(key, value) {
       setPath(this.settings, key, value);
+      if (key.startsWith('effects.')) this.fxTau = 0.15;   // slider drags feel direct
+      if (key === 'palette') this.paletteTau = 0.35;
       this.applySettings();
       this.saveSettings();
       this.syncControls();
@@ -295,7 +305,6 @@
       this.audio.sensitivity = s.sensitivity;
       this.audio.setMonitorVolume(s.volume);
       Object.assign(this.audio.drive, s.drive);
-      Object.assign(this.post.effects, s.effects);
       Object.assign(this.post.bands, s.bandFx);
       const colors = this.paletteColors();
       colors.forEach((hex, i) => this.paletteBase.set(hexToLinear(hex), i * 3));
@@ -311,6 +320,35 @@
     }
 
     /* ---------------- effects & palettes ---------------- */
+    /** Ease the live effect values toward the settings so changes glide instead of snapping. */
+    updateEffects(dt) {
+      const t = this.settings.effects, f = this.fx;
+      const k = 1 - Math.exp(-dt / Math.max(0.05, this.fxTau));
+      for (const key of ['fractal', 'bulge', 'trails', 'posterize', 'halftone', 'scanlines', 'aberration', 'invert', 'hueDrift']) {
+        f[key] += ((t[key] || 0) - f[key]) * k;
+        if (Math.abs(f[key] - (t[key] || 0)) < 1e-3) f[key] = t[key] || 0;
+      }
+      // Discrete modes: fade the current one out, switch, fade the new one in.
+      const wantMirror = t.mirror | 0;
+      if (f.mirrorMode !== wantMirror) {
+        f.mirrorMix += (0 - f.mirrorMix) * k;
+        if (f.mirrorMix < 0.02) { f.mirrorMix = 0; f.mirrorMode = wantMirror; }
+      } else {
+        f.mirrorMix += ((wantMirror ? 1 : 0) - f.mirrorMix) * k;
+      }
+      const wantN = t.kaleido >= 3 ? Math.round(t.kaleido) : 0;
+      if (f.kaleidoN !== wantN) {
+        f.kaleidoMix += (0 - f.kaleidoMix) * k;
+        if (f.kaleidoMix < 0.02) { f.kaleidoMix = 0; f.kaleidoN = wantN; }
+      } else {
+        f.kaleidoMix += ((wantN ? 1 : 0) - f.kaleidoMix) * k;
+      }
+      const e = this.post.effects;
+      e.mirror = f.mirrorMode; e.mirrorMix = f.mirrorMix;
+      e.kaleido = f.kaleidoN; e.kaleidoMix = f.kaleidoMix;
+      e.fractal = f.fractal; e.bulge = f.bulge; e.trails = f.trails; e.posterize = f.posterize;
+      e.halftone = f.halftone; e.scanlines = f.scanlines; e.aberration = f.aberration; e.invert = f.invert;
+    }
     randomizeEffects(silent) {
       const e = Object.assign({}, VIZ.EFFECT_DEFAULTS);
       const pool = FX_RECIPES.slice();
@@ -326,17 +364,20 @@
       }
       e.aberration = 0.5 + Math.random() * 1.5;
       this.settings.effects = e;
+      this.fxTau = 1.6;
       this.applySettings(); this.saveSettings(); this.syncControls();
       if (!silent) this.toast('Effects: ' + picked.join(' + '));
     }
     clearEffects() {
       this.settings.effects = Object.assign({}, VIZ.EFFECT_DEFAULTS);
+      this.fxTau = 1.2;
       this.applySettings(); this.saveSettings(); this.syncControls();
       this.toast('Effects cleared');
     }
     newRandomPalette() {
       this.settings.customPalette = randomPalette();
       this.settings.palette = -1;
+      this.paletteTau = 1.2;
       this.applySettings(); this.saveSettings(); this.syncControls();
       this.renderCustomSwatch();
     }
@@ -696,7 +737,7 @@
       this.qualityTimer = 0;
       const budget = this.refreshMs;
       if (this.frameAvg > budget * 1.22 + 0.5 && this.autoScale > 0.5) { this.autoScale = Math.max(0.5, this.autoScale - 0.1); this.qualityCooldown = 1.5; }
-      else if (this.frameAvg < budget * 1.1 && this.autoScale < 1) { this.autoScale = Math.min(1, this.autoScale + 0.05); this.qualityCooldown = 5; }
+      else if (this.frameAvg < budget * 1.1 && this.autoScale < 1) { this.autoScale = Math.min(1, this.autoScale + 0.1); this.qualityCooldown = 3; }
     }
 
     frame(now) {
@@ -716,12 +757,13 @@
       this.updateQuality(dt, frameMs);
       this.resize();
 
-      // Palette: optional hue cycling, then ease toward the target so switches feel smooth.
-      const drift = this.settings.effects.hueDrift || 0;
-      if (drift > 0) this.hueOffset = (this.hueOffset + drift * dt) % 360;
-      else this.hueOffset = 0;
+      // Effects glide toward their targets; palette hue cycling, then ease toward the target.
+      this.updateEffects(dt);
+      const drift = this.fx.hueDrift || 0;
+      if (drift > 0.01) this.hueOffset = (this.hueOffset + drift * dt) % 360;
+      else if (this.hueOffset !== 0) { this.hueOffset += (0 - this.hueOffset) * (1 - Math.exp(-dt / 1.5)); if (Math.abs(this.hueOffset) < 0.5) this.hueOffset = 0; }
       hueRotate(this.paletteTarget, this.paletteBase, this.hueOffset);
-      const pe = 1 - Math.exp(-dt / 0.35);
+      const pe = 1 - Math.exp(-dt / this.paletteTau);
       for (let i = 0; i < 12; i++) this.palette[i] += (this.paletteTarget[i] - this.palette[i]) * pe;
 
       const gl = this.gl, audio = this.audio;
@@ -798,7 +840,7 @@
             this.fxTimer = 0;
             this.randomizeEffects(true);
             if (Math.random() < 0.35) this.newRandomPalette();
-            else if (Math.random() < 0.5) this.setSetting('palette', Math.floor(Math.random() * PALETTES.length));
+            else if (Math.random() < 0.5) { this.setSetting('palette', Math.floor(Math.random() * PALETTES.length)); this.paletteTau = 1.5; }
           }
         }
         this.uiIdle += dt;

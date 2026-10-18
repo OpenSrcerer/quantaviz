@@ -91,7 +91,9 @@ uniform float uAberration;
 uniform float uShake;
 uniform vec2 uShakeDir;
 uniform int uMirror;
+uniform float uMirrorMix;
 uniform float uKaleido;
+uniform float uKaleidoMix;
 uniform float uFractal;
 uniform float uBulge;
 uniform float uTrails;
@@ -112,20 +114,24 @@ vec2 warp(vec2 uv) {
     float r2 = dot(c, c);
     c *= 1.0 + uBulge * (0.35 - r2) * 0.9;
   }
-  // Kaleidoscope.
-  if (uKaleido > 2.5) {
+  // Kaleidoscope (cross-faded in UV space so it eases in and out).
+  if (uKaleido > 2.5 && uKaleidoMix > 0.001) {
     float n = floor(uKaleido + 0.5);
     float seg = 6.28318530718 / n;
     float a = atan(c.y, c.x) + uTime * 0.05;
     float r = length(c);
     a = mod(a, seg);
     a = abs(a - seg * 0.5);
-    c = vec2(cos(a), sin(a)) * r;
+    c = mix(c, vec2(cos(a), sin(a)) * r, uKaleidoMix);
   }
-  // Mirror.
-  if (uMirror == 1) c.x = -abs(c.x);
-  else if (uMirror == 2) c.y = abs(c.y);
-  else if (uMirror == 3) c = vec2(-abs(c.x), abs(c.y));
+  // Mirror (same cross-fade).
+  if (uMirror > 0 && uMirrorMix > 0.001) {
+    vec2 m = c;
+    if (uMirror == 1) m.x = -abs(c.x);
+    else if (uMirror == 2) m.y = abs(c.y);
+    else m = vec2(-abs(c.x), abs(c.y));
+    c = mix(c, m, uMirrorMix);
+  }
   return c / vec2(asp, 1.0) + 0.5;
 }
 
@@ -246,7 +252,7 @@ void main() {
       this.progFx = ctx.fsProgram(FX_FS, 'post-fx');
       this.progOut = ctx.fsProgram(OUT_FS, 'post-out');
       this.params = { bloom: 0.9, threshold: 0.75, knee: 0.5, radius: 1.0, vignette: 0.4, grain: 0.035, exposure: 1.0 };
-      this.effects = Object.assign({}, EFFECT_DEFAULTS);
+      this.effects = Object.assign({}, EFFECT_DEFAULTS, { mirrorMix: 0, kaleidoMix: 0 });
       this.bands = { shake: 1, glow: 1, sparkle: 1 };
       this.flash = 0;
       this.flashColor = [1, 1, 1];
@@ -324,7 +330,9 @@ void main() {
         .f('uBloomStrength', p.bloom * 0.35 * glow)
         .f('uAberration', e.aberration * (0.2 + sparkle))
         .f('uShake', shake).f2('uShakeDir', this.shakeDir[0], this.shakeDir[1])
-        .i('uMirror', e.mirror | 0).f('uKaleido', e.kaleido).f('uFractal', e.fractal).f('uBulge', bulge)
+        .i('uMirror', e.mirror | 0).f('uMirrorMix', e.mirrorMix === undefined ? 1 : e.mirrorMix)
+        .f('uKaleido', e.kaleido).f('uKaleidoMix', e.kaleidoMix === undefined ? 1 : e.kaleidoMix)
+        .f('uFractal', e.fractal).f('uBulge', bulge)
         .f('uTrails', trails).f('uFlash', this.flash)
         .f3('uFlashColor', this.flashColor[0], this.flashColor[1], this.flashColor[2]);
       ctx.drawQuad();
