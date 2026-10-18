@@ -242,6 +242,7 @@
         high: { floor: 0.2, peak: 0.6 },
       };
       this.recentBeats = new Float32Array(8).fill(-100); // bass beat timestamps (seconds, same clock as update's `now`)
+      this.recentBeatAmp = new Float32Array(8);          // strength (0..1) of each of those hits
       this.bpm = 0;
       this.gain = 1;
       this.sensitivity = 1.0;
@@ -613,6 +614,8 @@
         this._lastBeat = now;
         this.recentBeats.copyWithin(0, 1);
         this.recentBeats[7] = now;
+        this.recentBeatAmp.copyWithin(0, 1);
+        this.recentBeatAmp[7] = Math.max(this._hit.bass.raw || 0, this.kick, strength * 0.6);
       }
       // Tempo envelope (max-pooled into 10 ms bins).
       this._envAcc = Math.max(this._envAcc, flux);
@@ -668,6 +671,7 @@
       const range = Math.max(0.15, st.peak - st.floor);
       let v = clamp((e - st.floor) / range, 0, 1);
       v = v * v * (3 - 2 * v);                                   // soften the knees
+      st.raw = v;
       const a = 1 - Math.exp(-dt / (v > prev ? 0.012 : 0.15));
       return prev + (v - prev) * a;
     }

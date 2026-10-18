@@ -15,6 +15,7 @@
 uniform vec4 uMass[8];      // x, z, mass, bandT
 uniform int uMassCount;
 uniform float uBeats[8];
+uniform float uBeatAmp[8];
 uniform float uWaveAmp;
 uniform float uDepth;
 uniform float uDrift;
@@ -26,7 +27,7 @@ float sheetHeight(vec2 p) {
     y -= uMass[i].z / sqrt(dot(d, d) + 0.025);
   }
   y *= uDepth * 0.11;
-  // Optional gravitational-wave fronts on kicks (off by default: depth is the bass envelope alone).
+  // Gravitational-wave fronts: launched only by bass hits, each as strong as the hit that made it.
   if (uWaveAmp > 0.001) {
     float r = length(p);
     for (int i = 0; i < 8; i++) {
@@ -34,7 +35,7 @@ float sheetHeight(vec2 p) {
       if (age > 0.0 && age < 3.0) {
         float front = age * 1.25;
         float env = exp(-pow((r - front) / 0.22, 2.0)) * exp(-age * 1.1);
-        y += uWaveAmp * 0.07 * (0.3 * uDrift + 1.3 * uKick) * env * sin((r - front) * 38.0);
+        y += uWaveAmp * 0.07 * (0.25 + 1.1 * uBeatAmp[i]) * env * sin((r - front) * 38.0);
       }
     }
   }
@@ -258,13 +259,13 @@ void main() {
       const drift = P.drift;
       const speed = P.speed * (0.55 * drift + 0.5 * audio.mid + 0.3 * audio.level);
       let mc = 0;
-      // Depth is the bass envelope and nothing else: an 808 pushes the wells down, they relax as it decays.
+      // Steady wells that deepen moderately with bass hits; the big bass statement is the wave fronts.
       const kick = audio.kick;
-      this.centralMass += ((0.06 + 0.2 * drift + 1.5 * kick) - this.centralMass) * (1 - Math.exp(-dt / 0.035));
+      this.centralMass += ((0.28 + 0.15 * drift + 0.45 * kick) - this.centralMass) * (1 - Math.exp(-dt / 0.05));
       this.massData[0] = 0; this.massData[1] = 0; this.massData[2] = this.centralMass; this.massData[3] = 0; mc++;
       for (const b of this.bodies) {
         b.phase += dt * speed * 0.75 * Math.pow(b.r, -1.5);
-        b.mass = (0.05 * drift + 0.1 + 0.45 * kick) * b.weight;   // wells: bass; the sprites' light: mids (shader)
+        b.mass = (0.05 * drift + 0.14 + 0.18 * kick) * b.weight;  // wells: bass; the sprites' light: mids (shader)
         b.x = Math.cos(b.phase) * b.r;
         b.z = Math.sin(b.phase) * b.r * b.ecc;
         const o = mc * 4;
@@ -323,7 +324,8 @@ void main() {
       const setHeight = (p) => {
         ctx.setCommon(p, audio, u);
         p.m4('uViewProj', this.vp).f4v('uMass', this.massData).i('uMassCount', mc)
-          .fv('uBeats', audio.recentBeats).f('uWaveAmp', P.wave).f('uDepth', P.depth).f('uDrift', drift);
+          .fv('uBeats', audio.recentBeats).fv('uBeatAmp', audio.recentBeatAmp)
+          .f('uWaveAmp', P.wave).f('uDepth', P.depth).f('uDrift', drift);
       };
 
       // --- draw ---
@@ -382,10 +384,10 @@ void main() {
   VIZ.registerScene({
     id: 'spacetime',
     name: 'Spacetime Fabric',
-    blurb: 'A sheet of spacetime whose depth is the bass envelope alone: every kick or 808 pushes the wells down and they relax as the note decays. Bodies on Kepler orbits glow with the mids. Press to drop a mass.',
+    blurb: 'A sheet of spacetime bent by orbiting bodies. Only bass hits move it: each kick launches a gravitational wave as strong as the hit. Bodies glow with the mids. Press to drop a mass.',
     params: [
       { key: 'depth', label: 'Gravity well depth', min: 0, max: 2, step: 0.05, value: 1 },
-      { key: 'wave', label: 'Gravitational-wave ripples on kicks', min: 0, max: 2, step: 0.05, value: 0 },
+      { key: 'wave', label: 'Gravitational waves on bass hits', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'speed', label: 'Orbit speed', min: 0, max: 3, step: 0.05, value: 1 },
       { key: 'drift', label: 'Idle motion (without music)', min: 0, max: 1, step: 0.01, value: 0 },
       { key: 'grid', label: 'Grid density', min: 48, max: 192, step: 16, value: 112, fmt: (v) => v + ' × ' + v },
