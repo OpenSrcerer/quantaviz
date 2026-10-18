@@ -41,7 +41,7 @@ float ringT(vec2 p) {
   return abs(fract(a * 2.0 + 0.5) * 2.0 - 1.0) * 0.85;
 }
 float barrierAmp(vec2 p) {
-  float b = band(ringT(p));
+  float b = bandMid(ringT(p) / 0.85);     // the ring is shaped by the mids
   return uBarrier * (0.03 + 0.97 * pow(b, 1.25));
 }
 float potential(vec2 p) {
@@ -224,8 +224,10 @@ void main() {
 
   vec3 wcol = hue * (B * presence);
   wcol *= 1.0 - 0.9 * uContours * lineStep;
+  // Highs: a fine glitter runs over the bright parts of the wave.
+  wcol *= 1.0 + 0.7 * uHigh * (0.5 + 0.5 * sin(uTime * 38.0 + g.x * 320.0 + g.y * 190.0)) + 0.6 * uHighPulse;
   col += wcol;
-  col *= 1.0 - 0.6 * uContours * lowLine;
+  col *= 1.0 - (0.6 + 0.3 * uHigh) * uContours * lowLine;
 
   // Topographic contours of the bass well (faint).
   float pl = pool * 4.0;
@@ -235,7 +237,7 @@ void main() {
 
   // Crystalline ring ridge, brightness driven by the same spectrum that shapes the barrier.
   float xr = sqrt(r2) - RING_R;
-  float bn = pow(band(ringT(p)), 3.0);
+  float bn = pow(bandMid(ringT(p) / 0.85), 3.0);
   float facet = 0.7 + 0.6 * abs(fract(atan(p.y, p.x + 1.0e-6) * 6.3661977) - 0.5);
   float glow = exp(-sq(xr / 0.025)) * (0.015 + 0.3 * bn);
   float core = exp(-sq(xr / 0.005)) * (0.03 + 1.2 * bn) * facet;

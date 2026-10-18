@@ -116,7 +116,7 @@ void main() {
   float bub = own * (1.0 - smoothstep(rb - 0.8 * px, rb + 0.8 * px, db));
   float bcore = own * (1.0 - smoothstep(0.0, rb * 0.55, db));
 
-  vec3 tint = palette(0.35 + 0.65 * bandT) * (0.9 + 2.2 * band(bandT)) * (charge > 0.0 ? 1.0 : 0.85);
+  vec3 tint = palette(0.35 + 0.65 * bandT) * (0.9 + 2.2 * bandMid(bandT)) * (charge > 0.0 ? 1.0 : 0.85);   // mids light the tracks
   vec3 col = tint * trail * 0.45 * wa + vec3(1.0, 0.96, 0.9) * core * 0.14 * wa;
   col += (tint * 0.6 + vec3(0.3)) * bub + vec3(0.45) * bcore;
   col *= taper * fresh;
@@ -201,7 +201,7 @@ void main() {
   float core = 1.0 - smoothstep(r - 0.8, r + 0.6, d);
   float glow = exp(-d * d / (r * r * 1.6)) * (1.0 - smoothstep(r + 0.5, r + 3.0, d));
   vec3 tint = palette(0.35 + 0.65 * vH.y);
-  float e = band(vH.y);
+  float e = bandMid(vH.y);
   float taper = smoothstep(0.04, 0.3, vH.z);
   vec3 col = mix(tint, vec3(1.0), 0.65) * (1.6 + 1.6 * e) * core + tint * (0.6 + e) * glow * 0.8;
   fragColor = vec4(col * taper, 1.0);
@@ -324,6 +324,7 @@ void main() {
       this.nSeg = 0;
       this.aspect = 1;
       this.chaos = 1;
+      this.high = 0;
       this.idle = 0;
       this.ptrOn = 0;
     }
@@ -347,7 +348,8 @@ void main() {
         ex: x, ey: y, es: sp, dist: 0,       // last emitted segment end, its speed, path length so far
         k: 1, loss: 1, maxAge: 6, decayAt: 0, deltaAt: -1, dead: false,
       };
-      if (q !== 0 && Math.random() < 0.1 * this.chaos) tr.deltaAt = 0.15 + Math.random() * 0.9;
+      // Highs: delta electrons (tight little spirals) spin off more often when the treble is busy.
+      if (q !== 0 && Math.random() < 0.1 * this.chaos * (0.4 + 1.8 * this.high)) tr.deltaAt = 0.15 + Math.random() * 0.9;
       this.pending.push(tr);
       return tr;
     }
@@ -465,6 +467,7 @@ void main() {
       const asp = (this.aspect = u.aspect);
       const dt = Math.min(u.dt, 0.05);
       this.chaos = pv('chaos', 1);
+      this.high = audio.high;
 
       // Window moved: the photograph (and the tracks) slide in screen space.
       const sh = 2 / Math.max(1, window.innerHeight);

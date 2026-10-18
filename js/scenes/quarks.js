@@ -406,7 +406,7 @@ void main() {
     /* ---- physics ---- */
     _physics(dt, audio, P) {
       const quarks = this.quarks, n = quarks.length;
-      for (const h of this.hadrons) h.energy = audio.bands[Math.floor(h.bandT * 127)];
+      for (const h of this.hadrons) h.energy = audio.bandMid(h.bandT);   // mids: light & body
       const bagR = (0.93 - 0.3 * audio.bass * P.pressure) * Math.min(1, this.aspect);
       this.bagR += (bagR - this.bagR) * (1 - Math.exp(-dt / 0.05));
       const sub = 3, hstep = dt / sub;
@@ -483,6 +483,11 @@ void main() {
             q.vx += Math.cos(a) * m; q.vy += Math.sin(a) * m;
           }
         }
+      }
+      // Highs: sparkle — a photon star pops off a random quark on high-frequency onsets.
+      if (audio.highOnset && this.quarks.length) {
+        const q = this.quarks[Math.floor(Math.random() * this.quarks.length)];
+        this._emit(q.x, q.y, 1, 0.5 + audio.high, q.vx, q.vy);
       }
       // String breaking (pair creation): one at a time, with a short cooldown, only while there is room.
       const pop = P.population;

@@ -257,6 +257,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .swatch span { flex: 1; }
 .swatch:hover { transform: scale(1.06); }
 .swatch.active { border-color: #fff; }
+.swatch.random { position: relative; }
+.swatch.random i {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-style: normal; font-size: 15px; color: #fff;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+.h3-note { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: 0.7; margin-left: 6px; }
+.btn-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.ghost.small { width: auto; padding: 6px 12px; font-size: 12.5px; }
 
 .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 13px; }
 .row.check { cursor: pointer; }

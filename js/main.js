@@ -1,5 +1,16 @@
 /* main.js — Quanta app shell: scene registry, settings, UI, render loop.
  *
+ * THE BAND RULE (every scene follows it, and post.js applies it globally):
+ *   bass  (32–150 Hz)    -> motion, shake, force: kicks, squeezes, ripples, field strength, the
+ *                           horizon breathing. Beats (`audio.beat`, `audio.beatPulse`, `onset`)
+ *                           are bass onsets.
+ *   mid   (150–2200 Hz)  -> light and body: brightness, size and colour energy of the main
+ *                           bodies (quarks, stars, tracks, wave packets, the disk).
+ *   high  (2200–16 kHz)  -> sparkle and detail: twinkle, jitter, fine particles, ink shimmer.
+ * Scenes read them as audio.bass / mid / high, the sharp onsets audio.beatPulse / midPulse /
+ * highPulse, and per-band spectra via bandLow(x) / bandMid(x) / bandHigh(x) (GLSL) or
+ * audio.bandLow(x) / bandMid(x) / bandHigh(x) (JS), x in 0..1 inside that band.
+ *
  * SCENE CONTRACT (see js/scenes/horizon.js for a minimal example)
  * ----------------------------------------------------------------
  * VIZ.registerScene({
@@ -24,14 +35,15 @@
  * `ctx`   : from VIZ.initGL — { gl, caps, drawQuad(), fsProgram(fs,label), program(vs,fs,opts),
  *           createTarget(w,h,opts), createTexture(opts), setCommon(prog, audio, u) }
  * `audio` : VIZ.AudioEngine — bands[128] (0..1 smoothed), bandsRaw, peaks, wave[512] (-1..1),
- *           bass, mid, high, level (0..1), beat (envelope 0..1), beatPulse (sharp 0..1),
- *           onset (true on the frame a beat was detected), beatCount, bpm, recentBeats[8] (times)
+ *           bass, mid, high, level (0..1), beat (bass envelope), beatPulse / midPulse / highPulse
+ *           (sharp 0..1), onset / midOnset / highOnset (true on the detection frame), beatCount,
+ *           bpm, recentBeats[8] (bass beat times), bandAt(t), bandLow/bandMid/bandHigh(x)
  * `u`     : { time, dt, width, height, intensity, palette (Float32Array 12 = 4 linear RGB colours,
  *           [0]=dark, [1..3]=accents), bandTex, waveTex, params ({key:value} of this scene's
  *           params), motion {dx,dy,vx,vy} (window movement, CSS px and px/s),
  *           pointer {x,y,down} (0..1, y up), aspect }
  * Shader programs may include VIZ.glsl.common and use ctx.setCommon(prog, audio, u) to fill
- * uTime/uRes/uBass/uMid/uHigh/uLevel/uBeat/uPulse/uIntensity/uCol[4]/uBands/uWave.
+ * uTime/uRes/uBass/uMid/uHigh/uLevel/uBeat/uPulse/uMidPulse/uHighPulse/uIntensity/uCol[4]/uBands/uWave.
  */
 (function () {
   'use strict';
@@ -50,12 +62,47 @@
     { name: 'Candy', colors: ['#2b0b3a', '#ff4ecd', '#ffe14f', '#4ff0ff'] },
     { name: 'Quark', colors: ['#120c2a', '#ff3b5c', '#3bff7a', '#4f8dff'] },
     { name: 'Ember', colors: ['#160606', '#ff2d55', '#ff9f1c', '#ffe9a8'] },
+    { name: 'Nebula', colors: ['#0d0620', '#6a00f4', '#ff2bd6', '#ffd6f5'] },
+    { name: 'Reef', colors: ['#031a1a', '#00c9a7', '#00e0ff', '#c7ff9a'] },
+    { name: 'Plasma', colors: ['#1a0230', '#ff007f', '#ff8c00', '#ffff5c'] },
+    { name: 'Toxic', colors: ['#0a1a02', '#7dff00', '#00ffb3', '#eaffd0'] },
+    { name: 'Sakura', colors: ['#2a0f1f', '#ff7eb6', '#ffc1e3', '#fff5fb'] },
+    { name: 'Deep Sea', colors: ['#020c1c', '#0052cc', '#00b4ff', '#9ff0ff'] },
+    { name: 'Retro', colors: ['#1b1030', '#ff5e5b', '#ffed66', '#00cecb'] },
     { name: 'Mono', colors: ['#0a0a0c', '#5a5f6e', '#c4c9d6', '#ffffff'] },
+  ];
+
+  const EFFECTS = [
+    { key: 'mirror', label: 'Mirror', min: 0, max: 3, step: 1, fmt: (v) => ['off', 'horizontal', 'vertical', 'quad'][v | 0] },
+    { key: 'kaleido', label: 'Kaleidoscope', min: 0, max: 12, step: 1, fmt: (v) => (v < 3 ? 'off' : (v | 0) + ' segments') },
+    { key: 'fractal', label: 'Fractal tiling', min: 0, max: 1, step: 0.01 },
+    { key: 'bulge', label: 'Space bend (pinch ↔ bulge)', min: -1, max: 1, step: 0.01 },
+    { key: 'trails', label: 'Echo trails', min: 0, max: 1, step: 0.01 },
+    { key: 'posterize', label: 'Cel shading & ink', min: 0, max: 1, step: 0.01 },
+    { key: 'halftone', label: 'Halftone print', min: 0, max: 1, step: 0.01 },
+    { key: 'scanlines', label: 'Scanlines', min: 0, max: 1, step: 0.01 },
+    { key: 'aberration', label: 'Chromatic aberration', min: 0, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
+    { key: 'invert', label: 'Negative flash on kicks', min: 0, max: 1, step: 0.01 },
+    { key: 'hueDrift', label: 'Palette cycling', min: 0, max: 90, step: 1, fmt: (v) => (v ? Math.round(v) + '°/s' : 'off') },
+  ];
+  // Random effect recipes: [key, amount generator, weight].
+  const FX_RECIPES = [
+    ['mirror', () => 1 + Math.floor(Math.random() * 3), 1.0],
+    ['kaleido', () => [3, 4, 5, 6, 8][Math.floor(Math.random() * 5)], 1.0],
+    ['fractal', () => 0.3 + Math.random() * 0.5, 0.8],
+    ['bulge', () => (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.45), 0.8],
+    ['trails', () => 0.3 + Math.random() * 0.6, 1.0],
+    ['posterize', () => 0.4 + Math.random() * 0.5, 0.9],
+    ['halftone', () => 0.3 + Math.random() * 0.4, 0.5],
+    ['scanlines', () => 0.3 + Math.random() * 0.4, 0.4],
+    ['invert', () => 0.5 + Math.random() * 0.5, 0.5],
+    ['hueDrift', () => 8 + Math.random() * 35, 0.8],
   ];
 
   const DEFAULTS = {
     scene: 'quarks',
     palette: 0,
+    customPalette: null,
     sensitivity: 1.0,
     intensity: 1.0,
     bloom: 1.0,
@@ -64,14 +111,27 @@
     autoQuality: true,
     autoCycle: false,
     cycleSecs: 45,
+    autoFx: false,
+    fxSecs: 30,
     volume: 0.6,
+    drive: { bass: 1, mid: 1, high: 1 },
+    bandFx: { shake: 1, glow: 1, sparkle: 1 },
+    effects: Object.assign({}, VIZ.EFFECT_DEFAULTS),
     sceneParams: {},
   };
-  const STORAGE_KEY = 'quanta.settings.v1';
+  const STORAGE_KEY = 'quanta.settings.v2';
   const GENERAL_SLIDERS = {
     generalAudio: [
       { key: 'sensitivity', label: 'Sensitivity', min: 0.3, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
       { key: 'volume', label: 'Playback volume (file / demo)', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+    ],
+    generalBands: [
+      { key: 'drive.bass', label: 'Bass → motion & shake', min: 0, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
+      { key: 'drive.mid', label: 'Mids → light & body', min: 0, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
+      { key: 'drive.high', label: 'Highs → sparkle & detail', min: 0, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
+      { key: 'bandFx.shake', label: 'Screen shake on kicks', min: 0, max: 2, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
+      { key: 'bandFx.glow', label: 'Glow follows mids', min: 0, max: 2, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
+      { key: 'bandFx.sparkle', label: 'Fringe & grain follow highs', min: 0, max: 2, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
     ],
     generalLook: [
       { key: 'intensity', label: 'Intensity', min: 0, max: 2, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
@@ -82,20 +142,65 @@
     generalCycle: [
       { key: 'cycleSecs', label: 'Switch every', min: 10, max: 180, step: 5, fmt: (v) => v + ' s' },
     ],
+    generalFx: [
+      { key: 'fxSecs', label: 'Reshuffle every', min: 5, max: 120, step: 5, fmt: (v) => v + ' s' },
+    ],
   };
 
   const $ = (sel) => document.querySelector(sel);
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const getPath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  const setPath = (obj, path, value) => {
+    const keys = path.split('.');
+    let o = obj;
+    for (let i = 0; i < keys.length - 1; i++) { if (typeof o[keys[i]] !== 'object' || o[keys[i]] === null) o[keys[i]] = {}; o = o[keys[i]]; }
+    o[keys[keys.length - 1]] = value;
+  };
 
   function hexToLinear(hex) {
     const n = parseInt(hex.slice(1), 16);
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.pow(v / 255, 2.2));
+  }
+  function hslToHex(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
+    let r, g, b;
+    if (h < 60) [r, g, b] = [c, x, 0]; else if (h < 120) [r, g, b] = [x, c, 0]; else if (h < 180) [r, g, b] = [0, c, x];
+    else if (h < 240) [r, g, b] = [0, x, c]; else if (h < 300) [r, g, b] = [x, 0, c]; else [r, g, b] = [c, 0, x];
+    return '#' + [r, g, b].map((v) => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
+  }
+  /** A harmonious random palette: dark base + three accents from a colour scheme. */
+  function randomPalette() {
+    const h = Math.random() * 360;
+    const schemes = [[0, 30, 60], [0, 120, 240], [0, 150, 210], [0, 40, 180], [0, 90, 180], [0, 60, 300]];
+    const sch = schemes[Math.floor(Math.random() * schemes.length)].slice().sort(() => Math.random() - 0.5);
+    const accents = sch.map((d, i) => hslToHex(h + d + (Math.random() - 0.5) * 12, 0.78 + Math.random() * 0.22, 0.5 + i * 0.1 + Math.random() * 0.08));
+    const dark = hslToHex(h + 180 + (Math.random() - 0.5) * 80, 0.45 + Math.random() * 0.3, 0.06 + Math.random() * 0.04);
+    return [dark, accents[0], accents[1], accents[2]];
+  }
+  /** Rotate the hue of 4 linear RGB colours (SVG feColorMatrix hueRotate). */
+  function hueRotate(out, inp, deg) {
+    const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+    const m = [
+      0.213 + 0.787 * c - 0.213 * s, 0.715 - 0.715 * c - 0.715 * s, 0.072 - 0.072 * c + 0.928 * s,
+      0.213 - 0.213 * c + 0.143 * s, 0.715 + 0.285 * c + 0.140 * s, 0.072 - 0.072 * c - 0.283 * s,
+      0.213 - 0.213 * c - 0.787 * s, 0.715 - 0.715 * c + 0.715 * s, 0.072 + 0.928 * c + 0.072 * s,
+    ];
+    for (let i = 0; i < 4; i++) {
+      const r = inp[i * 3], g = inp[i * 3 + 1], b = inp[i * 3 + 2];
+      out[i * 3] = Math.max(0, m[0] * r + m[1] * g + m[2] * b);
+      out[i * 3 + 1] = Math.max(0, m[3] * r + m[4] * g + m[5] * b);
+      out[i * 3 + 2] = Math.max(0, m[6] * r + m[7] * g + m[8] * b);
+    }
   }
 
   function loadSettings() {
     let s = {};
     try { s = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; } catch (e) { s = {}; }
     const out = Object.assign({}, DEFAULTS, s);
+    out.drive = Object.assign({}, DEFAULTS.drive, s.drive || {});
+    out.bandFx = Object.assign({}, DEFAULTS.bandFx, s.bandFx || {});
+    out.effects = Object.assign({}, DEFAULTS.effects, s.effects || {});
     out.sceneParams = Object.assign({}, s.sceneParams || {});
     return out;
   }
@@ -117,7 +222,9 @@
       this.bandTex = this.ctx.createTexture({ width: NUM_BANDS, height: 1, internalFormat: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE, filter: gl.LINEAR });
       this.waveTex = this.ctx.createTexture({ width: WAVE_LEN, height: 1, internalFormat: gl.R8, format: gl.RED, type: gl.UNSIGNED_BYTE, filter: gl.LINEAR, wrap: gl.REPEAT });
       this.palette = new Float32Array(12);
+      this.paletteBase = new Float32Array(12);
       this.paletteTarget = new Float32Array(12);
+      this.hueOffset = 0;
 
       this.scene = null;
       this.sceneDef = null;
@@ -126,6 +233,7 @@
       this.fadeDir = 0;
       this.pendingScene = null;
       this.cycleTimer = 0;
+      this.fxTimer = 0;
       this.blurbTimer = 0;
 
       this.time = 0;
@@ -172,19 +280,27 @@
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.settings)); } catch (e) { /* ignore */ }
     }
     setSetting(key, value) {
-      this.settings[key] = value;
+      setPath(this.settings, key, value);
       this.applySettings();
       this.saveSettings();
       this.syncControls();
+    }
+    paletteColors() {
+      const s = this.settings;
+      if (s.palette === -1 && s.customPalette && s.customPalette.length === 4) return s.customPalette;
+      return PALETTES[clamp(s.palette | 0, 0, PALETTES.length - 1)].colors;
     }
     applySettings() {
       const s = this.settings;
       this.audio.sensitivity = s.sensitivity;
       this.audio.setMonitorVolume(s.volume);
-      const pal = PALETTES[clamp(s.palette | 0, 0, PALETTES.length - 1)];
-      pal.colors.forEach((hex, i) => { const c = hexToLinear(hex); this.paletteTarget.set(c, i * 3); });
-      document.documentElement.style.setProperty('--accent', pal.colors[2]);
-      document.documentElement.style.setProperty('--accent2', pal.colors[1]);
+      Object.assign(this.audio.drive, s.drive);
+      Object.assign(this.post.effects, s.effects);
+      Object.assign(this.post.bands, s.bandFx);
+      const colors = this.paletteColors();
+      colors.forEach((hex, i) => this.paletteBase.set(hexToLinear(hex), i * 3));
+      document.documentElement.style.setProperty('--accent', colors[2]);
+      document.documentElement.style.setProperty('--accent2', colors[1]);
     }
     sceneParamValues(def) {
       const out = {};
@@ -194,10 +310,48 @@
       return out;
     }
 
+    /* ---------------- effects & palettes ---------------- */
+    randomizeEffects(silent) {
+      const e = Object.assign({}, VIZ.EFFECT_DEFAULTS);
+      const pool = FX_RECIPES.slice();
+      const n = 1 + Math.floor(Math.random() * 2) + (Math.random() < 0.3 ? 1 : 0);
+      const picked = [];
+      for (let i = 0; i < n && pool.length; i++) {
+        const total = pool.reduce((s, r) => s + r[2], 0);
+        let r = Math.random() * total, idx = 0;
+        while (idx < pool.length - 1 && (r -= pool[idx][2]) > 0) idx++;
+        const [key, gen] = pool.splice(idx, 1)[0];
+        e[key] = gen();
+        picked.push(EFFECTS.find((d) => d.key === key).label.split(' (')[0]);
+      }
+      e.aberration = 0.5 + Math.random() * 1.5;
+      this.settings.effects = e;
+      this.applySettings(); this.saveSettings(); this.syncControls();
+      if (!silent) this.toast('Effects: ' + picked.join(' + '));
+    }
+    clearEffects() {
+      this.settings.effects = Object.assign({}, VIZ.EFFECT_DEFAULTS);
+      this.applySettings(); this.saveSettings(); this.syncControls();
+      this.toast('Effects cleared');
+    }
+    newRandomPalette() {
+      this.settings.customPalette = randomPalette();
+      this.settings.palette = -1;
+      this.applySettings(); this.saveSettings(); this.syncControls();
+      this.renderCustomSwatch();
+    }
+    renderCustomSwatch() {
+      const b = $('#paletteList .swatch[data-index="-1"]');
+      if (!b) return;
+      b.innerHTML = '';
+      const cols = this.settings.customPalette || ['#222', '#555', '#999', '#ddd'];
+      cols.forEach((c) => { const sp = document.createElement('span'); sp.style.background = c; b.appendChild(sp); });
+      const tag = document.createElement('i'); tag.textContent = '✦'; b.appendChild(tag);
+    }
+
     /* ---------------- UI ---------------- */
     buildUI() {
       const s = this.settings;
-      // Source buttons.
       document.querySelectorAll('.src').forEach((b) => b.addEventListener('click', () => this.selectSource(b.dataset.src)));
       $('#btnSource').addEventListener('click', () => this.showHero());
       $('#fileInput').addEventListener('change', (e) => {
@@ -205,7 +359,6 @@
         if (f) this.selectSource('file', f);
         e.target.value = '';
       });
-      // Drag and drop.
       let dragDepth = 0;
       window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; $('#dropHint').classList.remove('hidden'); });
       window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('#dropHint').classList.add('hidden'); });
@@ -216,20 +369,24 @@
         if (f) this.selectSource('file', f);
       });
 
-      // HUD buttons.
       $('#btnSettings').addEventListener('click', () => this.togglePanel());
       $('#btnClosePanel').addEventListener('click', () => this.togglePanel(false));
       $('#btnFull').addEventListener('click', () => this.toggleFullscreen());
       $('#btnPrev').addEventListener('click', () => this.stepScene(-1));
       $('#btnNext').addEventListener('click', () => this.stepScene(1));
+      $('#btnFxRandom').addEventListener('click', () => this.randomizeEffects());
+      $('#btnFxClear').addEventListener('click', () => this.clearEffects());
       $('#btnReset').addEventListener('click', () => {
         const keepScene = this.settings.scene;
+        this.settings = loadSettings.call(null);
         this.settings = Object.assign({}, DEFAULTS, { scene: keepScene, sceneParams: {} });
+        this.settings.drive = Object.assign({}, DEFAULTS.drive);
+        this.settings.bandFx = Object.assign({}, DEFAULTS.bandFx);
+        this.settings.effects = Object.assign({}, DEFAULTS.effects);
         this.applySettings(); this.saveSettings(); this.syncControls(); this.buildSceneParams();
         this.toast('Settings reset');
       });
 
-      // Scene chips.
       const list = $('#sceneList');
       list.innerHTML = '';
       VIZ.scenes.forEach((def) => {
@@ -238,7 +395,6 @@
         b.addEventListener('click', () => this.selectScene(def.id));
         list.appendChild(b);
       });
-      // Palette swatches.
       const pl = $('#paletteList');
       pl.innerHTML = '';
       PALETTES.forEach((p, i) => {
@@ -248,20 +404,33 @@
         b.addEventListener('click', () => this.setSetting('palette', i));
         pl.appendChild(b);
       });
-      // General sliders.
+      const rb = document.createElement('button');
+      rb.className = 'swatch random'; rb.title = 'Random palette (R) — click again for a new one'; rb.dataset.index = -1;
+      rb.addEventListener('click', () => this.newRandomPalette());
+      pl.appendChild(rb);
+      this.renderCustomSwatch();
+
       this.controls = {};
       for (const containerId of Object.keys(GENERAL_SLIDERS)) {
         const host = document.getElementById(containerId);
+        if (!host) continue;
         for (const def of GENERAL_SLIDERS[containerId]) {
-          host.appendChild(this.makeSlider(def, s[def.key], (v) => this.setSetting(def.key, v)));
+          host.appendChild(this.makeSlider(def, getPath(s, def.key), (v) => this.setSetting(def.key, v)));
         }
       }
+      const fxHost = $('#effectList');
+      for (const def of EFFECTS) {
+        fxHost.appendChild(this.makeSlider(
+          { key: 'effects.' + def.key, label: def.label, min: def.min, max: def.max, step: def.step, fmt: def.fmt },
+          s.effects[def.key],
+          (v) => this.setSetting('effects.' + def.key, v)
+        ));
+      }
       $('#autoCycle').addEventListener('change', (e) => { this.cycleTimer = 0; this.setSetting('autoCycle', e.target.checked); });
+      $('#autoFx').addEventListener('change', (e) => { this.fxTimer = 0; this.setSetting('autoFx', e.target.checked); });
       $('#autoQuality').addEventListener('change', (e) => { this.autoScale = 1; this.setSetting('autoQuality', e.target.checked); });
 
-      // Keyboard.
       window.addEventListener('keydown', (e) => this.onKey(e));
-      // Pointer / idle.
       window.addEventListener('pointermove', (e) => {
         this.pointer.x = e.clientX / window.innerWidth;
         this.pointer.y = 1 - e.clientY / window.innerHeight;
@@ -294,10 +463,13 @@
     syncControls() {
       const s = this.settings;
       for (const key of Object.keys(this.controls || {})) {
+        if (key.startsWith('scene.')) continue;
         const c = this.controls[key];
-        if (s[key] !== undefined && +c.input.value !== s[key]) { c.input.value = s[key]; c.out.textContent = c.fmt(s[key]); }
+        const v = getPath(s, key);
+        if (v !== undefined && +c.input.value !== v) { c.input.value = v; c.out.textContent = c.fmt(v); }
       }
       $('#autoCycle').checked = !!s.autoCycle;
+      $('#autoFx').checked = !!s.autoFx;
       $('#autoQuality').checked = !!s.autoQuality;
       document.querySelectorAll('#sceneList .chip').forEach((b) => {
         b.classList.toggle('active', b.dataset.id === s.scene);
@@ -363,7 +535,6 @@
     onKey(e) {
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      // A button that was just clicked keeps focus; Space/Enter would re-trigger it.
       if (document.activeElement && document.activeElement.tagName === 'BUTTON') document.activeElement.blur();
       const k = e.key;
       if (k === ' ' || k === 'ArrowRight') { e.preventDefault(); this.stepScene(1); }
@@ -372,8 +543,13 @@
       else if (k === 'f' || k === 'F') this.toggleFullscreen();
       else if (k === 'h' || k === 'H') { this.uiForceHidden = !this.uiForceHidden; $('#hud').classList.toggle('hidden', this.uiForceHidden); if (this.uiForceHidden) this.togglePanel(false); }
       else if (k === 's' || k === 'S') this.togglePanel();
-      else if (k === 'p' || k === 'P') this.setSetting('palette', (this.settings.palette + 1) % PALETTES.length);
-      else if (k === 'a' || k === 'A') { this.cycleTimer = 0; this.setSetting('autoCycle', !this.settings.autoCycle); this.toast('Auto-cycle ' + (this.settings.autoCycle ? 'on' : 'off')); }
+      else if (k === 'p') this.setSetting('palette', (Math.max(0, this.settings.palette) + 1) % PALETTES.length);
+      else if (k === 'P') this.setSetting('palette', (Math.max(0, this.settings.palette) + PALETTES.length - 1) % PALETTES.length);
+      else if (k === 'r' || k === 'R') this.newRandomPalette();
+      else if (k === 'e' || k === 'E') this.randomizeEffects();
+      else if (k === 'c' || k === 'C') this.clearEffects();
+      else if (k === 'a' || k === 'A') { this.cycleTimer = 0; this.setSetting('autoCycle', !this.settings.autoCycle); this.toast('Auto-cycle scenes ' + (this.settings.autoCycle ? 'on' : 'off')); }
+      else if (k === 'x' || k === 'X') { this.fxTimer = 0; this.setSetting('autoFx', !this.settings.autoFx); this.toast('Auto-shuffle effects ' + (this.settings.autoFx ? 'on' : 'off')); }
       else if (k === 'Escape') { this.togglePanel(false); }
       else if (k === 'm' || k === 'M') { this.setSetting('volume', this.settings.volume > 0 ? 0 : 0.6); }
     }
@@ -441,7 +617,6 @@
       this.blurbTimer = 6;
       this.buildSceneParams();
       this.syncControls();
-      // Reset the GL state scenes rely on.
       const gl = this.gl;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.bindVertexArray(null);
@@ -476,7 +651,7 @@
       const m = this.motion;
       const x = window.screenX, y = window.screenY;
       if (m.init) { m.dx = x - m.x; m.dy = y - m.y; } else { m.dx = 0; m.dy = 0; m.init = true; }
-      if (Math.abs(m.dx) > 600 || Math.abs(m.dy) > 600) { m.dx = 0; m.dy = 0; } // monitor hop, not a shove
+      if (Math.abs(m.dx) > 600 || Math.abs(m.dy) > 600) { m.dx = 0; m.dy = 0; }
       m.x = x; m.y = y;
       const a = 1 - Math.exp(-dt / 0.08);
       m.vx += (m.dx / dt - m.vx) * a;
@@ -484,13 +659,11 @@
     }
 
     updateQuality(dt, frameMs) {
-      // Warm-up: render tiny for the first frames so we can measure the display's refresh interval.
       if (this.frameCount < 45) {
         this.frameCount++;
         this.autoScale = 0.35;
         if (this.frameCount > 8 && frameMs > 3) this.refreshMs = Math.min(this.refreshMs, frameMs);
         if (this.frameCount === 45) {
-          // Snap to a plausible refresh rate (60/75/90/120/144/165/240 Hz).
           const hz = 1000 / this.refreshMs;
           const cands = [60, 75, 90, 100, 120, 144, 165, 240];
           let best = 60;
@@ -503,6 +676,19 @@
         return;
       }
       this.frameAvg += (frameMs - this.frameAvg) * 0.08;
+      // Keep re-checking the refresh rate: a page that started in a hidden tab measured a throttled one.
+      this.minFrame = Math.min(this.minFrame || 1e9, frameMs > 2 ? frameMs : 1e9);
+      this.minFrameTimer = (this.minFrameTimer || 0) + dt;
+      if (this.minFrameTimer > 2) {
+        const hz = 1000 / this.minFrame;
+        if (hz > this.refreshHz * 1.12) {
+          const cands = [60, 75, 90, 100, 120, 144, 165, 240];
+          let best = this.refreshHz;
+          for (const c of cands) if (Math.abs(c - hz) < Math.abs(best - hz)) best = c;
+          this.refreshHz = best; this.refreshMs = 1000 / best;
+        }
+        this.minFrame = 1e9; this.minFrameTimer = 0;
+      }
       if (!this.settings.autoQuality) return;
       this.qualityTimer += dt;
       this.qualityCooldown = Math.max(0, this.qualityCooldown - dt);
@@ -520,7 +706,7 @@
       const frameMs = this.last ? (t - this.last) * 1000 : 16.7;
       this.last = t;
       dt = clamp(dt, 0.0005, 0.1);
-      this.time = t;   // same clock as audio.recentBeats
+      this.time = t;
 
       this.updateMotion(dt);
       this.audio.update(dt, t);
@@ -530,7 +716,11 @@
       this.updateQuality(dt, frameMs);
       this.resize();
 
-      // Palette eases toward the selected one so switching feels smooth.
+      // Palette: optional hue cycling, then ease toward the target so switches feel smooth.
+      const drift = this.settings.effects.hueDrift || 0;
+      if (drift > 0) this.hueOffset = (this.hueOffset + drift * dt) % 360;
+      else this.hueOffset = 0;
+      hueRotate(this.paletteTarget, this.paletteBase, this.hueOffset);
       const pe = 1 - Math.exp(-dt / 0.35);
       for (let i = 0; i < 12; i++) this.palette[i] += (this.paletteTarget[i] - this.palette[i]) * pe;
 
@@ -564,7 +754,7 @@
       p.bloom = s.bloom;
       p.grain = 0.035 * s.grain;
       p.exposure = (1 - this.fade) * (1 - this.fade);
-      this.post.flash = audio.beatPulse * 0.05 * s.intensity;
+      this.post.flash = audio.beatPulse * 0.05 * s.intensity * s.bandFx.shake;
       this.post.flashColor[0] = this.palette[9]; this.post.flashColor[1] = this.palette[10]; this.post.flashColor[2] = this.palette[11];
       this.post.render(hdr.tex, audio, u);
     }
@@ -583,7 +773,6 @@
     }
 
     updateUI(dt) {
-      // FPS readout.
       this.fpsAcc += dt; this.fpsFrames++;
       if (this.fpsAcc >= 0.5) {
         const fps = Math.round(this.fpsFrames / this.fpsAcc);
@@ -597,15 +786,21 @@
           this.toast('No sound is arriving. Is something playing? If you shared a window or tab, re-share "Entire screen" with "Share system audio" on.', 'error', 9000);
         }
       }
-      // Blurb under the scene name fades away.
       if (this.blurbTimer > 0) { this.blurbTimer -= dt; if (this.blurbTimer <= 0) $('#sceneBlurb').textContent = ''; }
-      // Auto-cycle.
-      if (this.settings.autoCycle && this.started) {
-        this.cycleTimer += dt;
-        if (this.cycleTimer >= this.settings.cycleSecs) { this.cycleTimer = 0; this.stepScene(1); }
-      }
-      // Idle UI hiding.
       if (this.started) {
+        if (this.settings.autoCycle) {
+          this.cycleTimer += dt;
+          if (this.cycleTimer >= this.settings.cycleSecs) { this.cycleTimer = 0; this.stepScene(1); }
+        }
+        if (this.settings.autoFx) {
+          this.fxTimer += dt;
+          if (this.fxTimer >= this.settings.fxSecs) {
+            this.fxTimer = 0;
+            this.randomizeEffects(true);
+            if (Math.random() < 0.35) this.newRandomPalette();
+            else if (Math.random() < 0.5) this.setSetting('palette', Math.floor(Math.random() * PALETTES.length));
+          }
+        }
         this.uiIdle += dt;
         const panelOpen = !$('#panel').classList.contains('hidden');
         const heroOpen = !$('#hero').classList.contains('hidden');

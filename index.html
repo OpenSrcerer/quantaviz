@@ -42,7 +42,7 @@
       </button>
     </div>
     <p class="hint">Desktop audio: in the share dialog choose <b>Entire screen</b> and switch on <b>Share system audio</b>. Nothing is recorded or sent anywhere.</p>
-    <p class="hint small">Space next scene · 1–6 pick scene · P palette · S settings · F fullscreen · H hide interface</p>
+    <p class="hint small">Space next scene · 1–6 pick scene · P palette · R random palette · E shuffle effects · C clear effects · S settings · F fullscreen · H hide</p>
   </div>
 </div>
 
@@ -96,6 +96,20 @@
     <section>
       <h3>Palette</h3>
       <div id="paletteList" class="swatches"></div>
+    </section>
+    <section>
+      <h3>Effects <span class="h3-note">layer freely · E shuffles · C clears</span></h3>
+      <div class="btn-row">
+        <button class="ghost small" id="btnFxRandom">✦ Shuffle effects</button>
+        <button class="ghost small" id="btnFxClear">Clear</button>
+      </div>
+      <div id="effectList"></div>
+      <label class="row check"><input type="checkbox" id="autoFx"><span>Auto-shuffle effects &amp; palettes</span></label>
+      <div id="generalFx"></div>
+    </section>
+    <section>
+      <h3>Band response <span class="h3-note">bass = motion · mids = light · highs = sparkle</span></h3>
+      <div id="generalBands"></div>
     </section>
     <section>
       <h3>Audio</h3>

@@ -49,7 +49,7 @@ vec3 starLayer(vec2 p, float scale, float seed, float px) {
       vec3 h2 = hash33(vec3(id + o + 7.0, seed * 3.1 + 1.0));
       if (h2.z > uStars) continue;
       vec2 sp = o + (h.xy - 0.5) * 0.8;
-      float e = band(fract(h.z * 0.9 + 0.05));
+      float e = bandMid(fract(h.z * 0.9 + 0.05));      // stars are lit by the mids
       float size = (0.028 + h2.x * h2.x * 0.1) * (0.75 + 0.8 * e);
       vec2 q = rot(uTime * (h2.y - 0.5) * 0.8 + h.z * 6.2831) * (f - sp);
       float d = sdStar5(q, size, 0.42 + 0.25 * e);
@@ -86,8 +86,10 @@ vec3 disk(vec2 ps, float rs) {
   float streaks = fbm3q(vec3(cos(a) * 2.5, sin(a) * 2.5, rr * 1.6 + uTime * 0.1));
   streaks = pow(streaks, 1.6);
   float heat = radial * (0.25 + 1.4 * streaks) * 5.5 / (rr * rr);
+  // Highs: fine hot granules sparkle in the gas.
+  heat *= 1.0 + (1.2 * uHigh + 1.5 * uHighPulse) * pow(noise3(vec3(a * 9.0, rr * 7.0, uTime * 2.5)), 3.0);
   float doppler = 1.0 + 0.75 * cos(th + 0.6);
-  float spec = band(fract(th / 6.2831853 + 0.5));
+  float spec = bandMid(fract(th / 6.2831853 + 0.5));   // the disk glows with the mids
   float flare = 0.0;
   for (int i = 0; i < 8; i++) {
     float age = uTime - uBeats[i];

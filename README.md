@@ -15,8 +15,35 @@ Instead of the usual bar spectrum, every scene is a small physics simulation tha
 | **Bubble Chamber** | A particle-detector photograph that paints itself: charged tracks curl in a magnetic field (radius ∝ momentum, opposite charges curl opposite ways), lose energy and spiral inward, neutrals decay into V-shaped pairs, delta electrons spin off, and the long exposure slowly fades. | Every beat is a collision whose multiplicity follows the beat strength; the field strength follows the bass; each track glows with its own frequency band. Hold the mouse to create a magnetic anomaly. |
 | **Event Horizon** | A point-mass gravitational lens bends a sky of cartoon stars around a black hole with a hot accretion disk (Doppler beaming included). | Every star twinkles to its own frequency band, the disk is heated by the music, the horizon breathes with the bass, beats flare outward through the disk. |
 
-Everything is customizable from the settings drawer (gear icon or `S`): palette, sensitivity,
-intensity, bloom, grain, render scale, auto-cycling, and per-scene parameters such as string
+## The band rule
+
+Every scene maps the spectrum the same way, so what you see always means the same thing:
+
+| Band | Drives | Examples |
+| --- | --- | --- |
+| **Bass** (32–150 Hz) | motion, shake, force | kicks that stretch the quark strings, the bag squeeze, gravitational-wave ripples, the breathing shell and horizon, the magnetic field, the global screen shake on kicks |
+| **Mids** (150–2200 Hz) | light and body | brightness, size and colour energy of the quarks, the orbiting bodies, the stars, the tracks, the wave packets and the accretion disk; the global bloom |
+| **Highs** (2200 Hz–16 kHz) | sparkle and detail | twinkle, jitter, photon stars, grid glints, delta electrons, ink shimmer, chromatic fringing and grain |
+
+Beats are detected per band too: kick drums shake, mid onsets flash the bodies, treble onsets
+sparkle. The *Band response* section of the settings drawer has a drive slider for each band and
+for each of the three global couplings (shake, glow, sparkle), so you can push or mute any of them.
+
+## Effects and palettes
+
+Six scenes become hundreds of looks: the *Effects* section layers independent post effects, each
+with its own slider, all persisted:
+
+mirror (horizontal / vertical / quad) · kaleidoscope (3–12 segments) · fractal tiling · space
+bend (pinch ↔ bulge, pulses with kicks) · echo trails · cel shading & ink outlines · halftone
+print · scanlines · chromatic aberration · negative flash on kicks · palette cycling (hue drift)
+
+`E` shuffles a tasteful random combination, `C` clears them, and *Auto-shuffle* reshuffles effects
+and palettes on a timer. There are 14 hand-picked palettes plus a ✦ random palette generator
+(`R`) that builds a harmonious scheme every time you press it.
+
+Everything else is customizable from the same drawer (gear icon or `S`): sensitivity, intensity,
+bloom, grain, render scale, auto-cycling scenes, and per-scene parameters such as string
 toughness, gravity-well depth, grid resolution or particle count. Settings persist in the browser.
 
 ## Running it
@@ -43,7 +70,10 @@ in this folder, only to this machine. Nothing is recorded or sent anywhere.
 | --- | --- |
 | `Space` / `→` / `←` | Next / previous scene |
 | `1`–`6` | Pick a scene directly |
-| `P` | Next palette |
+| `P` / `Shift+P` | Next / previous palette |
+| `R` | New random palette |
+| `E` / `C` | Shuffle effects / clear effects |
+| `X` | Toggle auto-shuffle of effects and palettes |
 | `S` / `Esc` | Open / close settings |
 | `A` | Toggle auto-cycling scenes |
 | `F` or double-click | Fullscreen |
@@ -58,8 +88,8 @@ URL parameters: `?scene=quarks|spacetime|wavefunction|starburst|chamber|horizon`
 
 Designed for 144 Hz. The audio analysis is a few thousand operations per frame (128 log-spaced bands
 from a 2048-point FFT, onset detection by spectral flux, tempo by autocorrelation), the heavy
-lifting happens on the GPU, and post-processing is a six-level progressive bloom with ACES tone
-mapping. On start Quanta measures the display's refresh rate; with **Adaptive quality** on it
+lifting happens on the GPU, and post-processing is a six-level progressive bloom, the effects
+stack and ACES tone mapping. On start Quanta measures the display's refresh rate; with **Adaptive quality** on it
 lowers the internal render scale when frames exceed the budget and raises it again when there is
 headroom. The frame counter at the bottom right shows achieved / target fps and the current
 resolution.
@@ -73,7 +103,7 @@ index.html              page shell, start screen, HUD, settings drawer
 css/style.css
 js/gl.js                WebGL2 toolkit: programs, render targets, mat4, shared GLSL snippets
 js/audio.js             capture (desktop / mic / file / demo synth) + analysis
-js/post.js              bloom, chromatic aberration, tonemap, vignette, grain
+js/post.js              bloom, the layered effects stack, band couplings, tonemap, vignette, grain
 js/main.js              app: scene registry, settings, UI, render loop, adaptive quality
 js/scenes/quarks.js     Quark Soup (CPU physics, instanced SDF sprites)
 js/scenes/spacetime.js  Spacetime Fabric (displaced grid mesh)
@@ -88,8 +118,10 @@ js/scenes/horizon.js    Event Horizon (single fragment shader)
 Create `js/scenes/myscene.js`, register it with `VIZ.registerScene({ id, name, blurb, params, create })`
 and add a `<script>` tag to `index.html`. A scene instance implements `resize(w, h)`,
 `render(target, audio, u)` and `dispose()`; the full contract, including what `audio` and `u`
-provide (bands, bass/mid/high, beat envelope, palette, window motion, pointer), is documented at the
-top of `js/main.js`. `js/scenes/horizon.js` is the smallest example.
+provide (bands, bass/mid/high, per-band onsets, palette, window motion, pointer), is documented at
+the top of `js/main.js`, together with the band rule every scene must follow. `js/scenes/horizon.js`
+is the smallest example. In GLSL use `bandLow(x)` / `bandMid(x)` / `bandHigh(x)` and the
+`uPulse` / `uMidPulse` / `uHighPulse` uniforms; in JS `audio.bandMid(x)` etc.
 
 ## Troubleshooting
 

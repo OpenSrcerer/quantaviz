@@ -69,7 +69,8 @@ void main() {
   // Home direction: latitude from the seed, longitude follows the frequency band (plus jitter),
   // and the whole shell slowly rotates (uSpin) so particles chase their home and swirl.
   float cz = sx * 2.0 - 1.0;
-  float ph = TAU * (bt * 1.25 + (h1 - 0.5) * 0.30) + uSpin;
+  float bx = (bt - 0.25) / 0.43;                       // position of this star's band inside the mids
+  float ph = TAU * (bx + (h1 - 0.5) * 0.30) + uSpin;
   float sr = sqrt(max(1.0 - cz * cz, 0.0));
   vec3 dir = vec3(sr * cos(ph), cz, sr * sin(ph));
 
@@ -165,7 +166,7 @@ void main() {
   float h2 = hash11(aSeed.x * 29.9 + 9.0);
 
   // Point size in pixels (seed.z is 0.4..1.3 for most stars, 1.6..3.6 for the big ones).
-  float raw = uSize * aSeed.z * (1.0 + 2.0 * b + 0.25 * spd) * (uRes.y / 1080.0) * 7.0 / w;
+  float raw = uSize * aSeed.z * (1.0 + 2.0 * b + 0.25 * spd) * (1.0 + 0.8 * uHighPulse * h2) * (uRes.y / 1080.0) * 7.0 / w;
   float px = clamp(raw, 1.0, uMaxPx);
   float dimm = min(raw, 1.0);
   dimm *= dimm;   // sub-pixel stars fade out instead of flickering
@@ -176,7 +177,7 @@ void main() {
   float tw = 1.0 - amp * (1.0 - s);
 
   float ct = 0.3 + 0.7 * fract(aSeed.y * 1.3 + aSeed.x * 0.2);
-  vec3 col = palette(ct) * (0.35 + 2.0 * b + 0.18 * spd) * tw;
+  vec3 col = palette(ct) * (0.3 + 1.4 * b + 0.18 * spd) * tw;
   col *= uBright * (0.6 + 0.6 * uIntensity) * (1.0 + 0.5 * uPulse);
   float cue = 1.0 + 0.3 * clamp((uCamDist - w) / 1.4, -1.0, 1.0);   // nearer stars a bit brighter
   col *= cue * smoothstep(0.25, 1.0, w) * dimm;
@@ -294,14 +295,14 @@ void main() {
       const seed = new Float32Array(count * 4);
       for (let i = 0; i < count; i++) {
         const sx = Math.random();
-        // Frequency band: most stars in 0.05..0.7 (biased low), a few treble stragglers up to 1.
-        const bt = Math.random() < 0.9 ? 0.05 + 0.65 * Math.pow(Math.random(), 1.15) : 0.7 + 0.3 * Math.random();
+        // Frequency band: stars live in the mids (0.25..0.68 of the spectrum), slightly biased low.
+        const bt = 0.25 + 0.43 * Math.pow(Math.random(), 1.1);
         // Size factor: mostly small sparkles, ~10% big, clearly star-shaped ones.
         const ru = Math.random();
         const sz = Math.random() < 0.9 ? 0.4 + 0.9 * ru * ru : 1.6 + 2.0 * ru;
         // Same home-direction formula as the update shader (spin = 0).
         const cz = sx * 2 - 1;
-        const ph = TAU * (bt * 1.25 + (hash11(sx * 91.37 + 1.0) - 0.5) * 0.30);
+        const ph = TAU * ((bt - 0.25) / 0.43 + (hash11(sx * 91.37 + 1.0) - 0.5) * 0.30);
         const sr = Math.sqrt(Math.max(1 - cz * cz, 0));
         const r0 = 0.8 * (0.86 + 0.28 * hash11(sx * 57.13 + 7.0));
         pos[i * 3] = sr * Math.cos(ph) * r0 + (Math.random() - 0.5) * 0.04;
@@ -410,7 +411,7 @@ void main() {
       ctx.setCommon(dp, audio, u);
       dp.m4('uViewProj', this.vp)
         .f('uSize', size)
-        .f('uBright', 0.11 * Math.sqrt(150000 / this.count))
+        .f('uBright', 0.075 * Math.sqrt(150000 / this.count))
         .f('uCamDist', dist)
         .f('uMaxPx', this.maxPx);
       gl.enable(gl.BLEND);

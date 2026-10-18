@@ -16,6 +16,8 @@
   const MAX_DB = -18;
   const TILT_DB_PER_OCT = 2.6;   // pink-noise style compensation so highs are visible
   const FLUX_HISTORY = 48;
+  // Band sub-ranges in texture coordinate t (log frequency): bass 32–150 Hz, mid 150–2200 Hz, high 2200–16000 Hz.
+  const RANGE_T = { bass: [0, 0.25], mid: [0.25, 0.68], high: [0.68, 1] };
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const mtof = (n) => 440 * Math.pow(2, (n - 69) / 12);
@@ -221,12 +223,21 @@
       this.wave = new Float32Array(WAVE_LEN);
       this.waveBytes = new Uint8Array(WAVE_LEN);
 
+      // Three independent band signals. Every scene binds to them the same way:
+      //   bass  -> motion / shake / force       (kicks, squeezes, ripples, field strength)
+      //   mid   -> light / body                 (brightness, size and colour energy of the main bodies)
+      //   high  -> sparkle / detail             (twinkle, jitter, fine particles, ink shimmer)
       this.bass = 0; this.mid = 0; this.high = 0; this.level = 0;
+      // Onsets per band: `beat`/`beatPulse`/`onset` are the BASS ones (kick drums); mid/high have their own.
       this.beat = 0; this.beatPulse = 0; this.onset = false; this.beatCount = 0;
-      this.recentBeats = new Float32Array(8).fill(-100); // timestamps (seconds, same clock as update's `now`)
+      this.midPulse = 0; this.midOnset = false;
+      this.highPulse = 0; this.highOnset = false;
+      this.recentBeats = new Float32Array(8).fill(-100); // bass beat timestamps (seconds, same clock as update's `now`)
       this.bpm = 0;
       this.gain = 1;
       this.sensitivity = 1.0;
+      this.drive = { bass: 1, mid: 1, high: 1 };   // per-band multipliers (user "band response")
+      this._bandDrive = new Float32Array(NUM_BANDS).fill(1);
       this.monitorVolume = 0.6;
       this.silentFor = 0;
 
@@ -240,6 +251,10 @@
       this._fluxHist = new Float32Array(FLUX_HISTORY);
       this._fluxIdx = 0;
       this._lastBeat = -10;
+      this._fluxHistM = new Float32Array(FLUX_HISTORY);
+      this._fluxHistH = new Float32Array(FLUX_HISTORY);
+      this._lastMid = -10;
+      this._lastHigh = -10;
       // Onset-strength envelope sampled at 100 Hz over 8 s, for tempo autocorrelation.
       this._env = new Float32Array(800);
       this._envLin = new Float32Array(800);
@@ -295,7 +310,44 @@
         mid: [idx(150), idx(2200)],
         high: [idx(2200), idx(16000)],
         flux: [idx(32), idx(260)],
+        fluxMid: [idx(300), idx(2200)],
+        fluxHigh: [idx(2500), idx(14000)],
       };
+      this.ranges = this._ranges;
+    }
+
+    /** Smoothed band energy at t in [0,1] (log frequency, 32 Hz .. 16 kHz). */
+    bandAt(t) { return this.bands[clamp(Math.round(t * (NUM_BANDS - 1)), 0, NUM_BANDS - 1)]; }
+    /** Same, but t spans only the bass / mid / high sub-range. */
+    bandLow(x) { return this.bandAt(RANGE_T.bass[0] + (RANGE_T.bass[1] - RANGE_T.bass[0]) * clamp(x, 0, 1)); }
+    bandMid(x) { return this.bandAt(RANGE_T.mid[0] + (RANGE_T.mid[1] - RANGE_T.mid[0]) * clamp(x, 0, 1)); }
+    bandHigh(x) { return this.bandAt(RANGE_T.high[0] + (RANGE_T.high[1] - RANGE_T.high[0]) * clamp(x, 0, 1)); }
+
+    _updateDrive() {
+      const r = this._ranges, d = this.drive, bd = this._bandDrive;
+      for (let k = 0; k < NUM_BANDS; k++) {
+        let v;
+        if (k <= r.bass[1]) v = d.bass;
+        else if (k <= r.mid[1]) v = d.mid;
+        else v = d.high;
+        // Blend across the two boundaries so a drive change doesn't create a step in the spectrum.
+        if (k > r.bass[1] - 3 && k < r.bass[1] + 3) v = d.bass + (d.mid - d.bass) * ((k - (r.bass[1] - 3)) / 6);
+        if (k > r.mid[1] - 4 && k < r.mid[1] + 4) v = d.mid + (d.high - d.mid) * ((k - (r.mid[1] - 4)) / 8);
+        bd[k] = v;
+      }
+    }
+
+    _flux(norm, prev, range) {
+      let f = 0;
+      for (let k = range[0]; k <= range[1]; k++) { const d = norm[k] - prev[k]; if (d > 0) f += d; }
+      return f / (range[1] - range[0] + 1);
+    }
+    _threshold(hist, idx, flux, mult, floor) {
+      let mean = 0;
+      for (let i = 0; i < FLUX_HISTORY; i++) mean += hist[i];
+      mean /= FLUX_HISTORY;
+      hist[idx] = flux;
+      return mean * mult + floor;
     }
 
     setMonitorVolume(v) {
@@ -434,16 +486,19 @@
       const decayB = Math.exp(-dt / 0.3);
       const decayP = Math.exp(-dt / 0.11);
       this.onset = false;
+      this.midOnset = false;
+      this.highOnset = false;
       if (!this.active || !this.analyser) {
         // Idle: let everything settle to zero.
         const k = Math.exp(-dt / 0.25);
         for (let i = 0; i < NUM_BANDS; i++) { this.bands[i] *= k; this.peaks[i] *= k; this.bandsRaw[i] *= k; }
         this.bass *= k; this.mid *= k; this.high *= k; this.level *= k;
-        this.beat *= decayB; this.beatPulse *= decayP;
+        this.beat *= decayB; this.beatPulse *= decayP; this.midPulse *= decayP; this.highPulse *= decayP;
         this.wave.fill(0);
         this._packBytes();
         return;
       }
+      this._updateDrive();
       const an = this.analyser;
       an.getFloatFrequencyData(this._fft);
       an.getFloatTimeDomainData(this._time);
@@ -482,8 +537,9 @@
       const aA = 1 - Math.exp(-dt / 0.022);
       const aR = 1 - Math.exp(-dt / 0.11);
       const norm = this._norm;
+      const bd = this._bandDrive;
       for (let k = 0; k < NUM_BANDS; k++) {
-        let v = this.bandsRaw[k] * g;
+        let v = this.bandsRaw[k] * g * bd[k];
         v = v / (1 + 0.18 * v);       // soft knee
         if (v > 1) v = 1;
         norm[k] = v;
@@ -512,22 +568,29 @@
       this.level += (lv - this.level) * (lv > this.level ? aA2 : aR2);
       this.silentFor = rms < 0.0015 ? this.silentFor + dt : 0;
 
-      // --- onset / beat detection (spectral flux in the low bands) ---
-      let flux = 0;
-      for (let k = r.flux[0]; k <= r.flux[1]; k++) {
-        const d = norm[k] - this._prevNorm[k];
-        if (d > 0) flux += d;
-      }
-      flux /= (r.flux[1] - r.flux[0] + 1);
+      // --- onset detection per band (spectral flux) ---
+      const flux = this._flux(norm, this._prevNorm, r.flux);
+      const fluxM = this._flux(norm, this._prevNorm, r.fluxMid);
+      const fluxH = this._flux(norm, this._prevNorm, r.fluxHigh);
       this._prevNorm.set(norm);
-      let mean = 0;
-      for (let i = 0; i < FLUX_HISTORY; i++) mean += this._fluxHist[i];
-      mean /= FLUX_HISTORY;
-      this._fluxHist[this._fluxIdx] = flux;
+      const threshold = this._threshold(this._fluxHist, this._fluxIdx, flux, 1.55, 0.012);
+      const thresholdM = this._threshold(this._fluxHistM, this._fluxIdx, fluxM, 1.7, 0.012);
+      const thresholdH = this._threshold(this._fluxHistH, this._fluxIdx, fluxH, 1.7, 0.012);
       this._fluxIdx = (this._fluxIdx + 1) % FLUX_HISTORY;
-      const threshold = mean * 1.55 + 0.012;
       this.beat *= decayB;
       this.beatPulse *= decayP;
+      this.midPulse *= decayP;
+      this.highPulse *= decayP;
+      if (fluxM > thresholdM && now - this._lastMid > 0.12 && this.mid > 0.06) {
+        this.midOnset = true;
+        this.midPulse = clamp(0.6 + (fluxM - thresholdM) / (thresholdM + 1e-4) * 0.3, 0.6, 1);
+        this._lastMid = now;
+      }
+      if (fluxH > thresholdH && now - this._lastHigh > 0.08 && this.high > 0.05) {
+        this.highOnset = true;
+        this.highPulse = clamp(0.6 + (fluxH - thresholdH) / (thresholdH + 1e-4) * 0.3, 0.6, 1);
+        this._lastHigh = now;
+      }
       if (flux > threshold && now - this._lastBeat > 0.16 && this.bass > 0.08) {
         const strength = clamp(0.55 + (flux - threshold) / (threshold + 1e-4) * 0.3, 0.55, 1);
         this.onset = true;
@@ -633,5 +696,5 @@
   }
 
   VIZ.AudioEngine = AudioEngine;
-  VIZ.AUDIO = { NUM_BANDS, WAVE_LEN };
+  VIZ.AUDIO = { NUM_BANDS, WAVE_LEN, RANGE_T };
 })();

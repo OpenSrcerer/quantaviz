@@ -31,7 +31,7 @@ float sheetHeight(vec2 p) {
     if (age > 0.0 && age < 3.0) {
       float front = age * 1.25;
       float env = exp(-pow((r - front) / 0.22, 2.0)) * exp(-age * 1.1);
-      y += uWaveAmp * 0.07 * env * sin((r - front) * 38.0);
+      y += uWaveAmp * 0.07 * (0.4 + 1.2 * uBass) * env * sin((r - front) * 38.0);   // bass: motion
     }
   }
   return y;
@@ -59,10 +59,14 @@ in float vDepth;
 in float vFog;
 out vec4 fragColor;
 ${VIZ.glsl.common}
+${VIZ.glsl.noise}
 void main() {
   float d = clamp(-vDepth * 1.8, 0.0, 1.0);
   vec3 col = palette(0.3 + 0.7 * d) * (0.18 + 1.8 * d * d + 0.1 * uLevel);
-  col += palette(0.95) * max(vDepth, 0.0) * 6.0;             // ripple crests flash bright
+  col += palette(0.95) * max(vDepth, 0.0) * 6.0;             // ripple crests flash bright (bass)
+  // Highs: glints race along the grid on high-frequency onsets.
+  float glint = step(0.975, hash12(floor(gl_FragCoord.xy / 3.0) + floor(uTime * 24.0)));
+  col += palette(0.85) * glint * (0.5 * uHigh + 1.2 * uHighPulse);
   float fog = exp(-max(vFog - 1.6, 0.0) * 0.45);
   fragColor = vec4(col * fog, 1.0);
 }`;
@@ -93,8 +97,8 @@ out float vKind;
 void main() {
   float y = sheetHeight(aBody.xy) + 0.02 + 0.05 * aBody.z;
   vec4 clip = uViewProj * vec4(aBody.x, y, aBody.y, 1.0);
-  float e = aKind > 0.5 ? uBass : band(aBody.w);
-  float px = (18.0 + 90.0 * aBody.z) * (1.0 + 0.6 * e) * (uRes.y / 1080.0) * 2.2 / max(clip.w, 0.2);
+  float e = aKind > 0.5 ? uBass : bandMid(aBody.w);                 // bodies are lit by the mids
+  float px = (18.0 + 90.0 * aBody.z) * (1.0 + 0.6 * e + 0.35 * uMidPulse) * (uRes.y / 1080.0) * 2.2 / max(clip.w, 0.2);
   gl_PointSize = clamp(px, 4.0, 160.0);
   vCol = (aKind > 0.5 ? palette(0.95) : palette(0.35 + 0.65 * aBody.w)) * (0.8 + 2.5 * e);
   vSpin = uTime * (0.4 + aBody.w) + aBody.w * 6.28;
@@ -253,7 +257,7 @@ void main() {
       this.massData[0] = 0; this.massData[1] = 0; this.massData[2] = this.centralMass; this.massData[3] = 0; mc++;
       for (const b of this.bodies) {
         b.phase += dt * speed * 0.75 * Math.pow(b.r, -1.5);
-        const e = audio.bands[Math.floor(b.bandT * 127)];
+        const e = audio.bandMid(b.bandT);              // mids: each body weighs as much as its mid band
         b.mass = 0.05 + 0.5 * Math.pow(e, 1.4);
         b.x = Math.cos(b.phase) * b.r;
         b.z = Math.sin(b.phase) * b.r * b.ecc;

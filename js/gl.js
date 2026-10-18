@@ -223,8 +223,10 @@ uniform float uBass;
 uniform float uMid;
 uniform float uHigh;
 uniform float uLevel;
-uniform float uBeat;
-uniform float uPulse;
+uniform float uBeat;        // bass beat envelope (0..1)
+uniform float uPulse;       // bass beat, sharp (0..1)
+uniform float uMidPulse;    // mid-range onset, sharp (0..1)
+uniform float uHighPulse;   // high-range onset, sharp (0..1)
 uniform float uIntensity;
 uniform vec3  uCol[4];
 uniform sampler2D uBands;   // x = smoothed, y = raw, z = peak-hold (width 128)
@@ -232,6 +234,10 @@ uniform sampler2D uWave;    // r = waveform 0..1 (width 512)
 float band(float t) { return texture(uBands, vec2(clamp(t, 0.0, 1.0), 0.5)).x; }
 float bandRaw(float t) { return texture(uBands, vec2(clamp(t, 0.0, 1.0), 0.5)).y; }
 float bandPeak(float t) { return texture(uBands, vec2(clamp(t, 0.0, 1.0), 0.5)).z; }
+// The three band sub-ranges (bass 32–150 Hz, mid 150–2200 Hz, high 2200–16000 Hz), x in 0..1 within each.
+float bandLow(float x)  { return band(mix(0.0, 0.25, clamp(x, 0.0, 1.0))); }
+float bandMid(float x)  { return band(mix(0.25, 0.68, clamp(x, 0.0, 1.0))); }
+float bandHigh(float x) { return band(mix(0.68, 1.0, clamp(x, 0.0, 1.0))); }
 float wave(float t) { return texture(uWave, vec2(fract(t), 0.5)).r * 2.0 - 1.0; }
 vec3 palette(float t) {
   t = clamp(t, 0.0, 1.0) * 3.0;
@@ -310,7 +316,8 @@ vec3 aces(vec3 x) {
       setCommon(p, audio, u) {
         p.f('uTime', u.time).f('uDt', u.dt).f2('uRes', u.width, u.height)
           .f('uBass', audio.bass).f('uMid', audio.mid).f('uHigh', audio.high).f('uLevel', audio.level)
-          .f('uBeat', audio.beat).f('uPulse', audio.beatPulse).f('uIntensity', u.intensity)
+          .f('uBeat', audio.beat).f('uPulse', audio.beatPulse)
+          .f('uMidPulse', audio.midPulse).f('uHighPulse', audio.highPulse).f('uIntensity', u.intensity)
           .f3v('uCol', u.palette)
           .tex('uBands', u.bandTex).tex('uWave', u.waveTex);
       },
