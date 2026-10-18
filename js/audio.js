@@ -16,6 +16,7 @@
   const MAX_DB = -18;
   const TILT_DB_PER_OCT = 2.6;   // pink-noise style compensation so highs are visible
   const FLUX_HISTORY = 48;
+  const HIT_FLOOR = 0.15;        // smallest attack (normalised energy units) that can ever count as a hit
   // Band sub-ranges in texture coordinate t (log frequency): bass 32–150 Hz, mid 150–2200 Hz, high 2200–16000 Hz.
   const RANGE_T = { bass: [0, 0.25], mid: [0.25, 0.68], high: [0.68, 1] };
 
@@ -239,9 +240,9 @@
       this.hitRelease = 0.18;   // seconds a hit takes to fade (user: Kick decay)
       this.hitThreshold = 0.4;  // attacks below this fraction of the strongest recent one are ignored (user: Kick threshold)
       this._hit = {
-        bass: { peak: 0.05, fast: undefined, slow: undefined, raw: 0 },
-        mid: { peak: 0.05, fast: undefined, slow: undefined, raw: 0 },
-        high: { peak: 0.05, fast: undefined, slow: undefined, raw: 0 },
+        bass: { fast: undefined, slow: undefined, ref: 0.3, cur: 0, raw: 0 },
+        mid: { fast: undefined, slow: undefined, ref: 0.3, cur: 0, raw: 0 },
+        high: { fast: undefined, slow: undefined, ref: 0.3, cur: 0, raw: 0 },
       };
       this.recentBeats = new Float32Array(8).fill(-100); // bass beat timestamps (seconds, same clock as update's `now`)
       this.recentBeatAmp = new Float32Array(8);          // strength (0..1) of each of those hits
@@ -319,6 +320,7 @@
       const idx = (f) => clamp(Math.round(Math.log(f / F_MIN) / Math.log(ratio) * NUM_BANDS), 0, NUM_BANDS - 1);
       this._ranges = {
         bass: [idx(32), idx(150)],
+        kick: [idx(35), idx(100)],      // kick drum + sub: below where guitars and vocals muddy the band
         mid: [idx(150), idx(2200)],
         high: [idx(2200), idx(16000)],
         flux: [idx(32), idx(260)],
@@ -375,7 +377,8 @@
       if (this.mediaEl && !this.mediaEl.paused) this.mediaEl.pause();
       this.active = false;
       // Forget the hit detectors' last values so a new source doesn't start with a false hit.
-      for (const k of Object.keys(this._hit)) { this._hit[k].fast = undefined; this._hit[k].slow = undefined; this._hit[k].peak = 0.05; this._hit[k].raw = 0; }
+      for (const k of Object.keys(this._hit)) { this._hit[k].fast = undefined; this._hit[k].slow = undefined; this._hit[k].ref = 0.3; this._hit[k].cur = 0; this._hit[k].raw = 0; }
+      this._kickPeak = 0.25; this._kickEnv = 0;
     }
 
     stop(reason) {
@@ -507,7 +510,7 @@
         const k = Math.exp(-dt / 0.25);
         for (let i = 0; i < NUM_BANDS; i++) { this.bands[i] *= k; this.peaks[i] *= k; this.bandsRaw[i] *= k; }
         this.bass *= k; this.mid *= k; this.high *= k; this.level *= k;
-        this.kick *= k; this.midHit *= k; this.highHit *= k;
+        this.kick *= k; this.midHit *= k; this.highHit *= k; this._kickEnv = (this._kickEnv || 0) * k;
         this.beat *= decayB; this.beatPulse *= decayP; this.midPulse *= decayP; this.highPulse *= decayP;
         this.wave.fill(0);
         this._packBytes();
@@ -570,7 +573,14 @@
       this.bass += (eBass - this.bass) * (eBass > this.bass ? aA2 : aR2);
       this.mid += (eMid - this.mid) * (eMid > this.mid ? aA2 : aR2);
       this.high += (eHigh - this.high) * (eHigh > this.high ? aA2 : aR2);
-      this.kick = this._hitEnvelope(this._hit.bass, eBass, this.kick, dt);
+      // Kick detection runs on the RAW kick band, normalised only by the bass's own recent loudness,
+      // so the global auto-gain (set by whichever band is loudest, usually the mids) cannot shrink
+      // or inflate it: a kick looks the same whether or not the mids are busy.
+      const eKickRaw = this._mean(this.bandsRaw, r.kick);
+      this._kickPeak = Math.max(eKickRaw, (this._kickPeak || 0.25) * Math.exp(-dt / 8), 0.25);
+      const eKick = Math.min(1.5, eKickRaw / this._kickPeak);
+      this._kickEnv = this._hitEnvelope(this._hit.bass, eKick, this._kickEnv || 0, dt);
+      this.kick = clamp(this._kickEnv * this.drive.bass, 0, 1);
       this.kickRaw = this._hit.bass.raw;      // same normalisation, no release: the instantaneous hit level
       this.midHit = this._hitEnvelope(this._hit.mid, eMid, this.midHit, dt);
       this.highHit = this._hitEnvelope(this._hit.high, eHigh, this.highHit, dt);
@@ -670,19 +680,29 @@
 
     /** Hit envelope = the band's onset strength. The attack of a hit is the gap between a fast
      *  (8 ms) and a slow (60 ms) envelope of the band energy, which is steady across frame rates
-     *  and ignores jitter. It is normalised by the strongest recent attack and gated by
-     *  `hitThreshold`: attacks below that fraction of the strongest read 0, the strongest reads 1.
+     *  and ignores jitter. Each attack is measured against the TYPICAL recent attack (a slow
+     *  average of attack sizes, not the strongest one), so a whole section of strong kicks all
+     *  register and one monster hit doesn't silence the rest; an absolute floor keeps low-mid
+     *  bleed and quiet-passage wobble from ever counting. `hitThreshold` is the fraction of a
+     *  typical attack below which a hit is ignored; a typical hit reads ~0.85, a strong one 1.
      *  Instant attack, `hitRelease` seconds of release. A sustained note counts only at its start. */
     _hitEnvelope(st, e, prev, dt) {
-      if (st.fast === undefined) { st.fast = e; st.slow = e; }
+      if (st.fast === undefined) { st.fast = e; st.slow = e; st.ref = 0.3; st.cur = 0; }
       st.fast += (e - st.fast) * (1 - Math.exp(-dt / 0.008));
       st.slow += (e - st.slow) * (1 - Math.exp(-dt / 0.06));
       const rise = Math.max(0, st.fast - st.slow);
-      // Reference: the strongest recent attack, decaying over ~3 s, floored so noise never qualifies.
-      st.peak = Math.max(rise, (st.peak || 0.05) * Math.exp(-dt / 3.0), 0.05);
-      const x = rise / st.peak;
+      // Learn the typical attack: follow each attack to its peak; when it has clearly ended, fold
+      // its size into a slow average (about the last six real attacks).
+      if (rise > st.cur) st.cur = rise;
+      else if (st.cur > 0 && rise < st.cur * 0.5) {
+        if (st.cur > HIT_FLOOR) st.ref += (st.cur - st.ref) * 0.18;
+        st.cur = 0;
+      }
+      // Re-sensitise only very slowly after a quiet stretch, never below the noise floor.
+      st.ref = Math.max(HIT_FLOOR, st.ref * Math.exp(-dt / 25));
+      const x = rise / st.ref;
       const thr = clamp(this.hitThreshold, 0, 0.95);
-      let v = clamp((x - thr) / (1 - thr), 0, 1);
+      let v = clamp((x - thr) / (1.15 - thr), 0, 1);
       v = v * v * (3 - 2 * v);
       st.raw = v;
       return v > prev ? v : prev + (v - prev) * (1 - Math.exp(-dt / this.hitRelease));

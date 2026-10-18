@@ -78,6 +78,7 @@
     { key: 'fractal', label: 'Fractal tiling', min: 0, max: 1, step: 0.01 },
     { key: 'bulge', label: 'Space bend (pinch ↔ bulge)', min: -1, max: 1, step: 0.01 },
     { key: 'trails', label: 'Echo trails', min: 0, max: 1, step: 0.01 },
+    { key: 'rotate', label: 'Rotation', min: -60, max: 60, step: 1, fmt: (v) => (Math.round(v) ? Math.round(v) + '°/s' : 'off') },
     { key: 'posterize', label: 'Cel shading & ink', min: 0, max: 1, step: 0.01 },
     { key: 'halftone', label: 'Halftone print', min: 0, max: 1, step: 0.01 },
     { key: 'scanlines', label: 'Scanlines', min: 0, max: 1, step: 0.01 },
@@ -92,6 +93,7 @@
     ['fractal', () => 0.3 + Math.random() * 0.5, 0.8],
     ['bulge', () => (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.45), 0.8],
     ['trails', () => 0.3 + Math.random() * 0.6, 1.0],
+    ['rotate', () => (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 25), 0.7],
     ['posterize', () => 0.4 + Math.random() * 0.5, 0.9],
     ['halftone', () => 0.3 + Math.random() * 0.4, 0.5],
     ['scanlines', () => 0.3 + Math.random() * 0.4, 0.4],
@@ -116,7 +118,7 @@
     volume: 0.6,
     drive: { bass: 1, mid: 1, high: 1 },
     kickRelease: 0.18,
-    kickThreshold: 0.4,
+    kickThreshold: 0.5,
     bandFx: { shake: 1, glow: 1, sparkle: 1 },
     effects: Object.assign({}, VIZ.EFFECT_DEFAULTS),
     sceneParams: {},
@@ -131,7 +133,7 @@
       { key: 'drive.bass', label: 'Bass → motion & shake', min: 0, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
       { key: 'drive.mid', label: 'Mids → light & body', min: 0, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
       { key: 'drive.high', label: 'Highs → sparkle & detail', min: 0, max: 2.5, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
-      { key: 'kickThreshold', label: 'Kick threshold (ignore weaker hits)', min: 0, max: 0.9, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+      { key: 'kickThreshold', label: 'Kick threshold (% of a typical kick)', min: 0, max: 0.9, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'kickRelease', label: 'Kick decay (how long a hit shows)', min: 0.06, max: 0.6, step: 0.01, fmt: (v) => Math.round(v * 1000) + ' ms' },
       { key: 'bandFx.shake', label: 'Screen shake on kicks', min: 0, max: 2, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
       { key: 'bandFx.glow', label: 'Glow follows mids', min: 0, max: 2, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
@@ -318,7 +320,7 @@
       this.audio.setMonitorVolume(s.volume);
       Object.assign(this.audio.drive, s.drive);
       this.audio.hitRelease = s.kickRelease || 0.18;
-      this.audio.hitThreshold = s.kickThreshold === undefined ? 0.4 : s.kickThreshold;
+      this.audio.hitThreshold = s.kickThreshold === undefined ? 0.5 : s.kickThreshold;
       Object.assign(this.post.bands, s.bandFx);
       const colors = this.paletteColors();
       colors.forEach((hex, i) => this.paletteBase.set(hexToLinear(hex), i * 3));
@@ -338,7 +340,7 @@
     updateEffects(dt) {
       const t = this.settings.effects, f = this.fx;
       const k = 1 - Math.exp(-dt / Math.max(0.05, this.fxTau));
-      for (const key of ['fractal', 'bulge', 'trails', 'posterize', 'halftone', 'scanlines', 'aberration', 'invert', 'hueDrift']) {
+      for (const key of ['fractal', 'bulge', 'trails', 'rotate', 'posterize', 'halftone', 'scanlines', 'aberration', 'invert', 'hueDrift']) {
         f[key] += ((t[key] || 0) - f[key]) * k;
         if (Math.abs(f[key] - (t[key] || 0)) < 1e-3) f[key] = t[key] || 0;
       }
@@ -357,7 +359,15 @@
       } else {
         f.kaleidoMix += ((wantN ? 1 : 0) - f.kaleidoMix) * k;
       }
+      // Rotation accumulates an angle from the eased speed; when the effect is off, unwind back to upright.
+      if (Math.abs(f.rotate) > 0.05) this.rotAngle = ((this.rotAngle || 0) + f.rotate * dt * Math.PI / 180) % (Math.PI * 2);
+      else if (this.rotAngle) {
+        let a = this.rotAngle; if (a > Math.PI) a -= Math.PI * 2;
+        a += (0 - a) * (1 - Math.exp(-dt / 1.2));
+        this.rotAngle = Math.abs(a) < 0.001 ? 0 : a;
+      }
       const e = this.post.effects;
+      e.rotAngle = this.rotAngle || 0;
       e.mirror = f.mirrorMode; e.mirrorMix = f.mirrorMix;
       e.kaleido = f.kaleidoN; e.kaleidoMix = f.kaleidoMix;
       e.fractal = f.fractal; e.bulge = f.bulge; e.trails = f.trails; e.posterize = f.posterize;
@@ -740,17 +750,22 @@
       }
       this.frameAvg += (frameMs - this.frameAvg) * 0.08;
       // Keep re-checking the refresh rate: a page that started in a hidden tab measured a throttled one.
-      this.minFrame = Math.min(this.minFrame || 1e9, frameMs > 2 ? frameMs : 1e9);
+      // Use the 10th percentile of recent frame intervals, not the minimum, so one jittery frame can't
+      // promote the estimate.
+      if (!this.frameSamples) this.frameSamples = [];
+      if (frameMs > 2) this.frameSamples.push(frameMs);
       this.minFrameTimer = (this.minFrameTimer || 0) + dt;
-      if (this.minFrameTimer > 2) {
-        const hz = 1000 / this.minFrame;
+      if (this.minFrameTimer > 2 && this.frameSamples.length > 30) {
+        const sorted = this.frameSamples.slice().sort((a, b) => a - b);
+        const p10 = sorted[Math.floor(sorted.length * 0.1)];
+        const hz = 1000 / p10;
         if (hz > this.refreshHz * 1.12) {
           const cands = [60, 75, 90, 100, 120, 144, 165, 240];
           let best = this.refreshHz;
           for (const c of cands) if (Math.abs(c - hz) < Math.abs(best - hz)) best = c;
           this.refreshHz = best; this.refreshMs = 1000 / best;
         }
-        this.minFrame = 1e9; this.minFrameTimer = 0;
+        this.frameSamples.length = 0; this.minFrameTimer = 0;
       }
       if (!this.settings.autoQuality) return;
       this.qualityTimer += dt;

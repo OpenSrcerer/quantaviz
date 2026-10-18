@@ -90,6 +90,7 @@ uniform float uBloomStrength;
 uniform float uAberration;
 uniform float uShake;
 uniform vec2 uShakeDir;
+uniform float uRotAngle;
 uniform int uMirror;
 uniform float uMirrorMix;
 uniform float uKaleido;
@@ -109,6 +110,8 @@ vec2 warp(vec2 uv) {
   // Bass punch: the whole frame zooms in with the kick envelope, plus a small directional nudge.
   c *= 1.0 - 0.085 * uShake;
   c += uShakeDir * 0.01 * uShake;
+  // Rotation of the whole frame.
+  if (abs(uRotAngle) > 0.0001) c = rot(uRotAngle) * c;
   // Bulge / pinch.
   if (abs(uBulge) > 0.001) {
     float r2 = dot(c, c);
@@ -233,7 +236,7 @@ void main() {
 }`;
 
   const EFFECT_DEFAULTS = {
-    mirror: 0, kaleido: 0, fractal: 0, bulge: 0, trails: 0,
+    mirror: 0, kaleido: 0, fractal: 0, bulge: 0, trails: 0, rotate: 0,
     posterize: 0, halftone: 0, scanlines: 0, aberration: 1, invert: 0, hueDrift: 0,
   };
 
@@ -330,6 +333,7 @@ void main() {
         .f('uBloomStrength', p.bloom * 0.35 * glow)
         .f('uAberration', e.aberration * (0.2 + sparkle))
         .f('uShake', shake).f2('uShakeDir', this.shakeDir[0], this.shakeDir[1])
+        .f('uRotAngle', e.rotAngle || 0)
         .i('uMirror', e.mirror | 0).f('uMirrorMix', e.mirrorMix === undefined ? 1 : e.mirrorMix)
         .f('uKaleido', e.kaleido).f('uKaleidoMix', e.kaleidoMix === undefined ? 1 : e.kaleidoMix)
         .f('uFractal', e.fractal).f('uBulge', bulge)
