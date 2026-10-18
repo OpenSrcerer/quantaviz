@@ -407,8 +407,8 @@ void main() {
     _physics(dt, audio, P) {
       const quarks = this.quarks, n = quarks.length;
       for (const h of this.hadrons) h.energy = audio.bandMid(h.bandT);   // mids: light & body
-      const bagR = (0.93 - 0.3 * audio.bass * P.pressure) * Math.min(1, this.aspect);
-      this.bagR += (bagR - this.bagR) * (1 - Math.exp(-dt / 0.05));
+      const bagR = (0.93 - 0.34 * audio.kick * P.pressure) * Math.min(1, this.aspect);   // every kick squeezes the bag
+      this.bagR += (bagR - this.bagR) * (1 - Math.exp(-dt / 0.035));
       const sub = 3, hstep = dt / sub;
       const jit = audio.high * 28 * P.energy;
       const lbreak = LBREAK * P.tension;

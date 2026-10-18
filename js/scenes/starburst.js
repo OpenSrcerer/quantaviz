@@ -78,7 +78,7 @@ void main() {
 
   // Thin hollow shell: breathes with bass, each wedge bulges with its own band.
   float b = band(0.25 + 0.43 * wedge);
-  float shell = (0.6 + 0.3 * uBass + 0.45 * b) * uSpread * (0.95 + 0.1 * h2);
+  float shell = (0.55 + 0.45 * uKick + 0.1 * uBass + 0.4 * b) * uSpread * (0.95 + 0.1 * h2);   // the globe swells with every kick
   vec3 home = dir * shell;
 
   float len = length(pos);

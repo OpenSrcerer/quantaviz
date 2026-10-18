@@ -227,6 +227,9 @@ uniform float uBeat;        // bass beat envelope (0..1)
 uniform float uPulse;       // bass beat, sharp (0..1)
 uniform float uMidPulse;    // mid-range onset, sharp (0..1)
 uniform float uHighPulse;   // high-range onset, sharp (0..1)
+uniform float uKick;        // bass hit envelope, range-normalised: 0 quiet .. 1 loudest recent hit
+uniform float uMidHit;      // same for the mids
+uniform float uHighHit;     // same for the highs
 uniform float uIntensity;
 uniform vec3  uCol[4];
 uniform sampler2D uBands;   // x = smoothed, y = raw, z = peak-hold (width 128)
@@ -317,7 +320,8 @@ vec3 aces(vec3 x) {
         p.f('uTime', u.time).f('uDt', u.dt).f2('uRes', u.width, u.height)
           .f('uBass', audio.bass).f('uMid', audio.mid).f('uHigh', audio.high).f('uLevel', audio.level)
           .f('uBeat', audio.beat).f('uPulse', audio.beatPulse)
-          .f('uMidPulse', audio.midPulse).f('uHighPulse', audio.highPulse).f('uIntensity', u.intensity)
+          .f('uMidPulse', audio.midPulse).f('uHighPulse', audio.highPulse)
+          .f('uKick', audio.kick).f('uMidHit', audio.midHit).f('uHighHit', audio.highHit).f('uIntensity', u.intensity)
           .f3v('uCol', u.palette)
           .tex('uBands', u.bandTex).tex('uWave', u.waveTex);
       },

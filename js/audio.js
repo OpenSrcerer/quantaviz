@@ -232,6 +232,15 @@
       this.beat = 0; this.beatPulse = 0; this.onset = false; this.beatCount = 0;
       this.midPulse = 0; this.midOnset = false;
       this.highPulse = 0; this.highOnset = false;
+      // Range-normalised hit envelopes: 0 at the band's recent quiet level, 1 at its recent loud
+      // level, fast attack / ~150 ms release. `kick` is the bass one: an 808 pushes it to 1 and it
+      // follows the note down. Scenes use it for their big visible bass response.
+      this.kick = 0; this.midHit = 0; this.highHit = 0;
+      this._hit = {
+        bass: { floor: 0.2, peak: 0.6 },
+        mid: { floor: 0.2, peak: 0.6 },
+        high: { floor: 0.2, peak: 0.6 },
+      };
       this.recentBeats = new Float32Array(8).fill(-100); // bass beat timestamps (seconds, same clock as update's `now`)
       this.bpm = 0;
       this.gain = 1;
@@ -493,6 +502,7 @@
         const k = Math.exp(-dt / 0.25);
         for (let i = 0; i < NUM_BANDS; i++) { this.bands[i] *= k; this.peaks[i] *= k; this.bandsRaw[i] *= k; }
         this.bass *= k; this.mid *= k; this.high *= k; this.level *= k;
+        this.kick *= k; this.midHit *= k; this.highHit *= k;
         this.beat *= decayB; this.beatPulse *= decayP; this.midPulse *= decayP; this.highPulse *= decayP;
         this.wave.fill(0);
         this._packBytes();
@@ -555,6 +565,9 @@
       this.bass += (eBass - this.bass) * (eBass > this.bass ? aA2 : aR2);
       this.mid += (eMid - this.mid) * (eMid > this.mid ? aA2 : aR2);
       this.high += (eHigh - this.high) * (eHigh > this.high ? aA2 : aR2);
+      this.kick = this._hitEnvelope(this._hit.bass, eBass, this.kick, dt);
+      this.midHit = this._hitEnvelope(this._hit.mid, eMid, this.midHit, dt);
+      this.highHit = this._hitEnvelope(this._hit.high, eHigh, this.highHit, dt);
 
       // --- waveform + level ---
       const tm = this._time, stride = FFT_SIZE / WAVE_LEN;
@@ -645,6 +658,18 @@
       if (!bestLag || best < 0.08) return;
       const bpm = 6000 / bestLag;
       this.bpm = this.bpm ? this.bpm + (bpm - this.bpm) * 0.3 : bpm;
+    }
+
+    /** Normalise an instantaneous band energy into the band's recent dynamic range, then envelope it. */
+    _hitEnvelope(st, e, prev, dt) {
+      // Floor drops instantly to quieter values and creeps up slowly; peak jumps up and decays slowly.
+      st.floor = e < st.floor ? e : st.floor + (e - st.floor) * (1 - Math.exp(-dt / 4.0));
+      st.peak = e > st.peak ? e : st.peak + (e - st.peak) * (1 - Math.exp(-dt / 3.0));
+      const range = Math.max(0.15, st.peak - st.floor);
+      let v = clamp((e - st.floor) / range, 0, 1);
+      v = v * v * (3 - 2 * v);                                   // soften the knees
+      const a = 1 - Math.exp(-dt / (v > prev ? 0.012 : 0.15));
+      return prev + (v - prev) * a;
     }
 
     _mean(arr, range) {

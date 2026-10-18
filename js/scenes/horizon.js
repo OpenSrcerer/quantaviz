@@ -106,7 +106,7 @@ vec3 disk(vec2 ps, float rs) {
 void main() {
   vec2 p = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
   float px = 1.0 / uRes.y;
-  float rs = 0.085 * (1.0 + 0.3 * uBass + 0.12 * uPulse);
+  float rs = 0.08 * (1.0 + 0.55 * uKick + 0.1 * uBass);   // the horizon and its disk grow with every bass hit
   float r = length(p);
   float thE2 = rs * rs * 2.6 * uLensing;
   vec2 ps = p * (1.0 - thE2 / max(r * r, 1e-5));

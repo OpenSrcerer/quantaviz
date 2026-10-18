@@ -26,17 +26,18 @@ float sheetHeight(vec2 p) {
     y -= uMass[i].z / sqrt(dot(d, d) + 0.025);
   }
   y *= uDepth * 0.11;
-  float r = length(p);
-  // Bass only: kicks launch gravitational-wave fronts, sustained bass keeps the sheet undulating.
-  for (int i = 0; i < 8; i++) {
-    float age = uTime - uBeats[i];
-    if (age > 0.0 && age < 3.0) {
-      float front = age * 1.25;
-      float env = exp(-pow((r - front) / 0.22, 2.0)) * exp(-age * 1.1);
-      y += uWaveAmp * 0.07 * (0.3 * uDrift + 1.3 * uBass) * env * sin((r - front) * 38.0);
+  // Optional gravitational-wave fronts on kicks (off by default: depth is the bass envelope alone).
+  if (uWaveAmp > 0.001) {
+    float r = length(p);
+    for (int i = 0; i < 8; i++) {
+      float age = uTime - uBeats[i];
+      if (age > 0.0 && age < 3.0) {
+        float front = age * 1.25;
+        float env = exp(-pow((r - front) / 0.22, 2.0)) * exp(-age * 1.1);
+        y += uWaveAmp * 0.07 * (0.3 * uDrift + 1.3 * uKick) * env * sin((r - front) * 38.0);
+      }
     }
   }
-  y += uWaveAmp * 0.035 * uBass * uBass * exp(-r * 0.6) * sin(r * 22.0 - uTime * 7.0);
   return y;
 }`;
 
@@ -186,12 +187,12 @@ void main() {
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
       this.bodies = [
-        { r: 0.5, phase: 0.3, bandT: 0.1, ecc: 0.8 },
-        { r: 0.72, phase: 2.1, bandT: 0.24, ecc: 0.9 },
-        { r: 0.95, phase: 4.0, bandT: 0.38, ecc: 0.75 },
-        { r: 1.15, phase: 1.2, bandT: 0.52, ecc: 0.85 },
-        { r: 0.38, phase: 5.0, bandT: 0.68, ecc: 0.95 },
-        { r: 1.35, phase: 3.3, bandT: 0.84, ecc: 0.8 },
+        { r: 0.5, phase: 0.3, bandT: 0.1, ecc: 0.8, weight: 1.0 },
+        { r: 0.72, phase: 2.1, bandT: 0.24, ecc: 0.9, weight: 0.8 },
+        { r: 0.95, phase: 4.0, bandT: 0.38, ecc: 0.75, weight: 1.1 },
+        { r: 1.15, phase: 1.2, bandT: 0.52, ecc: 0.85, weight: 0.7 },
+        { r: 0.38, phase: 5.0, bandT: 0.68, ecc: 0.95, weight: 0.6 },
+        { r: 1.35, phase: 3.3, bandT: 0.84, ecc: 0.8, weight: 0.9 },
       ];
       this.massData = new Float32Array(32);
       this.bodyData = new Float32Array(40);
@@ -257,12 +258,13 @@ void main() {
       const drift = P.drift;
       const speed = P.speed * (0.55 * drift + 0.5 * audio.mid + 0.3 * audio.level);
       let mc = 0;
-      this.centralMass += ((0.06 + 0.2 * drift + 1.1 * audio.bass) - this.centralMass) * (1 - Math.exp(-dt / 0.06));
+      // Depth is the bass envelope and nothing else: an 808 pushes the wells down, they relax as it decays.
+      const kick = audio.kick;
+      this.centralMass += ((0.06 + 0.2 * drift + 1.5 * kick) - this.centralMass) * (1 - Math.exp(-dt / 0.035));
       this.massData[0] = 0; this.massData[1] = 0; this.massData[2] = this.centralMass; this.massData[3] = 0; mc++;
       for (const b of this.bodies) {
         b.phase += dt * speed * 0.75 * Math.pow(b.r, -1.5);
-        const e = audio.bandMid(b.bandT);              // mids: each body weighs as much as its mid band
-        b.mass = 0.05 * drift + 0.5 * Math.pow(e, 1.4);
+        b.mass = (0.05 * drift + 0.1 + 0.45 * kick) * b.weight;   // wells: bass; the sprites' light: mids (shader)
         b.x = Math.cos(b.phase) * b.r;
         b.z = Math.sin(b.phase) * b.r * b.ecc;
         const o = mc * 4;
@@ -380,10 +382,10 @@ void main() {
   VIZ.registerScene({
     id: 'spacetime',
     name: 'Spacetime Fabric',
-    blurb: 'Six bodies on Kepler orbits, each weighing as much as its mid band, bend a sheet of spacetime; only the bass moves it: kicks send gravitational waves, sustained bass makes it undulate. Press to drop a mass.',
+    blurb: 'A sheet of spacetime whose depth is the bass envelope alone: every kick or 808 pushes the wells down and they relax as the note decays. Bodies on Kepler orbits glow with the mids. Press to drop a mass.',
     params: [
       { key: 'depth', label: 'Gravity well depth', min: 0, max: 2, step: 0.05, value: 1 },
-      { key: 'wave', label: 'Gravitational waves', min: 0, max: 2, step: 0.05, value: 1 },
+      { key: 'wave', label: 'Gravitational-wave ripples on kicks', min: 0, max: 2, step: 0.05, value: 0 },
       { key: 'speed', label: 'Orbit speed', min: 0, max: 3, step: 0.05, value: 1 },
       { key: 'drift', label: 'Idle motion (without music)', min: 0, max: 1, step: 0.01, value: 0 },
       { key: 'grid', label: 'Grid density', min: 48, max: 192, step: 16, value: 112, fmt: (v) => v + ' × ' + v },

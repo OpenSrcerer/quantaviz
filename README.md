@@ -25,9 +25,13 @@ Every scene maps the spectrum the same way, so what you see always means the sam
 | **Mids** (150–2200 Hz) | light and body | brightness, size and colour energy of the quarks, the orbiting bodies, the stars, the tracks, the wave packets and the accretion disk; the global bloom |
 | **Highs** (2200 Hz–16 kHz) | sparkle and detail | twinkle, jitter, photon stars, grid glints, delta electrons, ink shimmer, chromatic fringing and grain |
 
-Beats are detected per band too: kick drums shake, mid onsets flash the bodies, treble onsets
-sparkle. The *Band response* section of the settings drawer has a drive slider for each band and
-for each of the three global couplings (shake, glow, sparkle), so you can push or mute any of them.
+The big visible bass response in every scene (horizon and disk size, globe radius, bag squeeze,
+spacetime depth, magnetic field, the global zoom punch) uses a *kick envelope*: the bass energy
+normalised into its own recent dynamic range, so a hit always swings it from 0 to 1 whether the
+track is quiet or loud, and an 808 holds it up and lets it fall with the note. Onsets are detected
+per band too: kick drums shake, mid onsets flash the bodies, treble onsets sparkle. The *Band
+response* section of the settings drawer has a drive slider for each band and for each of the
+three global couplings (shake, glow, sparkle), so you can push or mute any of them.
 
 ## Effects and palettes
 
@@ -121,8 +125,10 @@ and add a `<script>` tag to `index.html`. A scene instance implements `resize(w,
 `render(target, audio, u)` and `dispose()`; the full contract, including what `audio` and `u`
 provide (bands, bass/mid/high, per-band onsets, palette, window motion, pointer), is documented at
 the top of `js/main.js`, together with the band rule every scene must follow. `js/scenes/horizon.js`
-is the smallest example. In GLSL use `bandLow(x)` / `bandMid(x)` / `bandHigh(x)` and the
-`uPulse` / `uMidPulse` / `uHighPulse` uniforms; in JS `audio.bandMid(x)` etc.
+is the smallest example. In GLSL use `bandLow(x)` / `bandMid(x)` / `bandHigh(x)`, the hit
+envelopes `uKick` / `uMidHit` / `uHighHit` and the sharp onsets `uPulse` / `uMidPulse` /
+`uHighPulse`; in JS `audio.kick`, `audio.bandMid(x)` etc. Rule of thumb: the scene's largest
+visible change must be driven by `uKick`.
 
 ## Troubleshooting
 

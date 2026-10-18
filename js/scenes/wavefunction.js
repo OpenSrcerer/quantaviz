@@ -33,8 +33,8 @@
 uniform float uBarrier;
 uniform vec2  uPtr;      // pointer in grid uv (y up)
 uniform float uPtrOn;    // 0..1, eased
-const float RING_R = 0.33;
 float sq(float x) { return x * x; }
+float ringR() { return 0.33 - 0.04 * uKick; }     // the ring contracts on every bass hit
 // Spectrum coordinate around the ring: triangle wave, bass on the +-x axis, treble on the +-y axis.
 float ringT(vec2 p) {
   float a = atan(p.y, p.x + 1.0e-6) * 0.15915494;
@@ -47,8 +47,8 @@ float barrierAmp(vec2 p) {
 float potential(vec2 p) {
   float r2 = dot(p, p);
   float r = sqrt(r2);
-  float v = barrierAmp(p) * exp(-sq((r - RING_R) / 0.025));
-  v -= 0.6 * uBass * exp(-r2 / 0.0144);
+  float v = barrierAmp(p) * exp(-sq((r - ringR()) / 0.025));
+  v -= 0.9 * uKick * exp(-r2 / 0.0144);
   vec2 dp = p - (uPtr - 0.5);
   v -= 0.8 * uPtrOn * exp(-dot(dp, dp) / 0.0036);
   return clamp(v, -1.0, 1.5);
@@ -219,7 +219,7 @@ void main() {
   // Background + bass pool.
   vec3 col = palette(0.05) * 0.15;
   float r2 = dot(p, p);
-  float pool = exp(-r2 / 0.0144) * uBass;
+  float pool = exp(-r2 / 0.0144) * uKick;
   col *= 1.0 - 0.45 * pool;
 
   vec3 wcol = hue * (B * presence);
@@ -236,7 +236,7 @@ void main() {
   col += palette(0.55) * pline * 0.06;
 
   // Crystalline ring ridge, brightness driven by the same spectrum that shapes the barrier.
-  float xr = sqrt(r2) - RING_R;
+  float xr = sqrt(r2) - ringR();
   float bn = pow(bandMid(ringT(p) / 0.85), 3.0);
   float facet = 0.7 + 0.6 * abs(fract(atan(p.y, p.x + 1.0e-6) * 6.3661977) - 0.5);
   float glow = exp(-sq(xr / 0.025)) * (0.015 + 0.3 * bn);

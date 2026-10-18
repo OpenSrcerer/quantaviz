@@ -494,7 +494,7 @@ void main() {
 
       // Physics: 2 substeps.
       this.nSeg = 0;
-      const B = (0.6 + 1.6 * audio.bass) * pv('field', 1);
+      const B = (0.5 + 2.0 * audio.kick + 0.4 * audio.bass) * pv('field', 1);   // tracks curl tighter on every kick
       const hstep = dt / 2;
       for (let s = 0; s < 2; s++) {
         this._step(hstep, B, down, ptx, pty);

@@ -106,9 +106,9 @@ vec2 mirrorUv(vec2 uv) { return 1.0 - abs(fract(uv * 0.5) * 2.0 - 1.0); }
 vec2 warp(vec2 uv) {
   float asp = uRes.x / uRes.y;
   vec2 c = (uv - 0.5) * vec2(asp, 1.0);
-  // Bass shake: zoom punch plus a directional nudge.
-  c *= 1.0 - 0.07 * uShake;
-  c += uShakeDir * 0.012 * uShake;
+  // Bass punch: the whole frame zooms in with the kick envelope, plus a small directional nudge.
+  c *= 1.0 - 0.085 * uShake;
+  c += uShakeDir * 0.01 * uShake;
   // Bulge / pinch.
   if (abs(uBulge) > 0.001) {
     float r2 = dot(c, c);
@@ -312,10 +312,10 @@ void main() {
 
       // --- the universal band couplings ---
       if (audio.onset) { const a = Math.random() * TAU; this.shakeDir[0] = Math.cos(a); this.shakeDir[1] = Math.sin(a); }
-      const shake = Math.min(1, b.shake * audio.beatPulse * (0.45 + 0.9 * audio.bass));
+      const shake = Math.min(1, b.shake * audio.kick);
       const glow = 1 + b.glow * (0.5 * audio.mid + 0.4 * audio.midPulse);
       const sparkle = b.sparkle * (0.7 * audio.high + 1.2 * audio.highPulse);
-      const bulge = e.bulge !== 0 ? e.bulge * (1 + 0.6 * b.shake * audio.beatPulse) : 0;
+      const bulge = e.bulge !== 0 ? e.bulge * (1 + 0.6 * b.shake * audio.kick) : 0;
 
       // --- pass A ---
       const useTrails = e.trails > 0.001;
