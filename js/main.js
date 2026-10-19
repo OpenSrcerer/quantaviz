@@ -621,9 +621,10 @@
       const k = e.key;
       if (k === ' ' || k === 'ArrowRight') { e.preventDefault(); this.stepScene(1); }
       else if (k === 'ArrowLeft') { e.preventDefault(); this.stepScene(-1); }
-      else if (/^Digit\d$/.test(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        // 1-9, 0 pick scenes 1-10; with Shift, 11-20. e.code, so Shift+digit works on any layout.
-        const n = (+e.code.slice(5) || 10) + (e.shiftKey ? 10 : 0);
+      else if (/^Digit\d$/.test(e.code) && !e.ctrlKey && !e.metaKey) {
+        // 1-9, 0 pick scenes 1-10; Shift adds 10, Alt adds 20. e.code, so it works on any layout.
+        e.preventDefault();
+        const n = (+e.code.slice(5) || 10) + (e.shiftKey ? 10 : 0) + (e.altKey ? 20 : 0);
         const d = VIZ.scenes[n - 1];
         if (d) this.selectScene(d.id);
       }

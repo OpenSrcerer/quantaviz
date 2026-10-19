@@ -21,6 +21,17 @@ Instead of the usual bar spectrum, every scene is a small physics simulation tha
 | **Ferrofluid** | A puddle of magnetic liquid over an electromagnet. Above a critical field it stands up in a hexagonal lattice of spikes (the Rosensweig instability) and heaps up over the magnet. Raymarched, shaded as black mirror-glossy liquid in a studio. | Kicks surge the coil current, so the spikes leap out across the puddle and relax. Mids set each spike's height around its field value and light the studio it reflects; highs flicker glints on the tips. Drag to move the magnet. |
 | **Wormhole** | An endless flight down a curving Einstein–Rosen throat ruled like spacetime, with light from the other universe at the far end. | Always flying forward; kicks hit the throttle, squeeze the throat and release a gravitational-wave ring that rushes past. Around each wall ring the mid spectrum runs once; highs streak star dust past the camera. |
 | **Double Slit** | Waves through two slits interfere; single photons land on the detector one by one (drawn from \|ψ\|²) and a long exposure builds the fringes from dots. The live \|ψ\|² curve sits beside the screen. | Every kick is a *which-way measurement*: detectors at the slits light up, the interference term vanishes, the wave behind the barrier splits in two and photons land in two plain bands, until the fringes return. The mid centroid sets the wavelength (fringe spacing and colour) and mids the wave brightness; highs fire bursts of photons. |
+| **Galaxy Collision** | Two spiral galaxies on a bound elliptical orbit fly through each other, Toomre-style: heavy cores plus 64k massless stars integrated on the GPU, so the passing core's tide tears out tails and bridges. A new pair replaces them after a couple of passages; the camera orbits. | Kicks fast-forward the encounter and flare the cores. Every star belongs to a mid band and glows with it; young blue stars sparkle with the highs. |
+| **Black Hole Merger** | Two black holes spiral in (separation follows Peters' a⁴ ∝ t law, so the orbit chirps), lens the stars behind them and radiate a two-armed gravitational-wave spiral; at contact a flash, a ring of radiation and a ringdown, then a new pair. A LIGO-style strain trace scrolls along the bottom. | Every kick bleeds orbital energy (the pair steps closer), so heavy music merges faster. Mids heat the gas around each hole; highs twinkle the stars and glint in the wave crests. |
+| **Comet** | We ride along a comet on an e = 0.75 Kepler orbit: the blue ion tail points straight away from the sun, the yellow dust tail curves back along the orbit, and both swing round through perihelion while the stars stream past. | Kicks are solar-wind gusts: a disconnection kink races down the ion tail and it flaps with the bass. Mids light the coma and dust; highs shed sparkling fragments down the dust tail. |
+| **Jupiter** | A low flight over the cloud deck toward the curved horizon. Bands stream along alternating jets (two-phase flow noise, so the clouds really flow), storms twist the clouds round them and drift with their band, Io crosses the sky. | Kicks spin up new storms ahead and nudge the flight. Each latitude is a mid band; highs fire lightning deep in the belts. |
+| **Lorenz Attractor** | Three tracers on Lorenz's chaotic system draw the butterfly as glowing ribbons; they start a hair apart and diverge (the butterfly effect), and are periodically dropped back together to do it again. The camera orbits. | Kicks push ρ up so the attractor swells and races. The ribbon is painted with the mids as it is drawn, a history of the music; high onsets nudge the tracers apart. |
+| **Pendulum Wave** | 24 pendulums tuned so the n-th swings K + n times per minute drift through travelling snakes, standing waves and apparent chaos and realign, with motion trails, from a slowly drifting camera. | Kicks swing them wider. The row is a spectrum: each bob glows with its own mid band. A high onset sends a ripple of light along the row. |
+| **Plasma Globe** | Filaments of ionised gas crawl from the electrode to the glass, fork near it and gather where you hold the mouse. | Each filament is a mid band. Kicks fire an arc burst that flares them and makes them jump; highs crackle along them and spark at the glass. |
+| **Tokamak** | An open-frame fusion reactor (16 D-shaped field coils, central solenoid, poloidal rings) with a D-shaped plasma ring whose helical field lines (pitch set by the safety factor q) flow round. Raymarched coils, volumetric plasma; the camera circles. | Every kick is an edge-localised mode: the plasma edge erupts in filaments toward the wall and the core crashes briefly. Mids set the temperature; highs flicker edge turbulence. |
+| **Feynman Diagrams** | Spacetime scrolls by (time runs left to right) and particle interactions are written onto it in Feynman's notation, each drawing itself in time order with a quantum riding every line. | Kicks write annihilations and exchanges and surge the scroll; mid onsets write emissions and vacuum-polarisation loops; highs pop virtual-pair bubbles. |
+| **Reaction–Diffusion** | A BZ-style excitable medium (Barkley's model) on the GPU: broken wave fronts curl into rotating spirals that turn and collide forever, in a petri dish the camera pans across. | Kicks drop catalyst (expanding rings) and scratch lines that birth spiral pairs. Mids raise excitability; highs spark tiny new sources. |
+| **Warp Drive** | First person in an Alcubierre warp bubble. Below c the sky shows real relativistic aberration, Doppler colour and beaming; past c the stars streak, the bubble wall shimmers and blueshifted particles flash on its front. A spacetime diagram plots your worldline: inside the light cone below c, tipped into the forbidden *elsewhere* at warp. | Kicks charge the drive: warp jumps past light speed that coast back down. Mids glow the bubble wall; highs are the impacts on its front. |
 
 ## The band rule
 
@@ -50,7 +61,7 @@ three global couplings (shake, glow, sparkle), so you can push or mute any of th
 
 ## Effects and palettes
 
-Twelve scenes become hundreds of looks: the *Effects* section layers independent post effects, each
+Twenty-three scenes become hundreds of looks: the *Effects* section layers independent post effects, each
 with its own slider, all persisted:
 
 mirror (horizontal / vertical / quad) · kaleidoscope (3–12 segments) · fractal tiling · space
@@ -115,7 +126,7 @@ in this folder, only to this machine. Nothing is recorded or sent anywhere.
 | Key | Action |
 | --- | --- |
 | `Space` / `→` / `←` | Next / previous scene |
-| `1`–`9`, `0` / `Shift`+`1`–`2` | Pick scene 1–10 / 11–12 directly |
+| `1`–`9`, `0` (+`Shift` for 11–20, +`Alt` for 21–23) | Pick a scene directly |
 | `P` / `Shift+P` | Next / previous palette |
 | `R` | New random palette |
 | `E` / `C` | Shuffle effects / clear effects |
@@ -128,7 +139,7 @@ in this folder, only to this machine. Nothing is recorded or sent anywhere.
 | Mouse drag | Grab a quark / drop a mass / attract the wavefunction |
 | Move the window | Shove the physics (Quark Soup, Starburst, Spacetime) |
 
-URL parameters: `?scene=quarks|spacetime|wavefunction|starburst|chamber|horizon|supernova|pulsar|aurora|ferrofluid|wormhole|doubleslit`, `?mute=1`.
+URL parameters: `?scene=quarks|spacetime|wavefunction|starburst|chamber|horizon|supernova|pulsar|aurora|ferrofluid|wormhole|doubleslit|galaxies|merger|comet|jupiter|lorenz|pendulum|plasma|tokamak|feynman|reaction|warp`, `?mute=1`.
 
 ## Performance
 
@@ -164,6 +175,17 @@ js/scenes/aurora.js     Aurora (single fragment shader)
 js/scenes/ferrofluid.js Ferrofluid (raymarched heightfield)
 js/scenes/wormhole.js   Wormhole (polar tunnel mapping)
 js/scenes/doubleslit.js Double Slit (analytic waves + photon exposure buffer)
+js/scenes/galaxies.js   Galaxy Collision (transform-feedback N-body stars)
+js/scenes/merger.js     Black Hole Merger (single fragment shader, inspiral in JS)
+js/scenes/comet.js      Comet (single fragment shader, Kepler orbit in JS)
+js/scenes/jupiter.js    Jupiter (ray-sphere flyover, two-phase flow noise)
+js/scenes/lorenz.js     Lorenz Attractor (RK4 in JS, instanced ribbons)
+js/scenes/pendulum.js   Pendulum Wave (projected in JS, float data texture)
+js/scenes/plasma.js     Plasma Globe (polar filament curves)
+js/scenes/tokamak.js    Tokamak (raymarched coils + volumetric plasma)
+js/scenes/feynman.js    Feynman Diagrams (SDF line styles from uniform arrays)
+js/scenes/reaction.js   Reaction–Diffusion (Barkley model, ping-pong float targets)
+js/scenes/warp.js       Warp Drive (relativistic aberration + spacetime diagram)
 ```
 
 ### Adding a scene
