@@ -14,7 +14,7 @@
   'use strict';
   const VIZ = window.VIZ;
   const NB = 24, TR = 9;
-  const ROWS = TR + 3;      // 0 current bob, 1..TR trail, TR+1 pivots, TR+2 extras
+  const ROWS = TR + 4;      // 0 current bob, 1..TR trail, TR+1 pivots, TR+2 extras, TR+3 floor reflections
   const K = 18, T = 60, G = 9.81;
   const SCALE = 0.36;      // longest pendulum ~1 unit
 
@@ -40,9 +40,20 @@ float segDist(vec2 p, vec2 a, vec2 b) {
 void main() {
   vec2 p = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
   float px = 1.0 / uRes.y;
-  vec3 col = mix(palette(0.0) * 0.12, palette(0.0) * 0.03, vUv.y);
-  // A floor glow under the row.
-  col += palette(0.3) * exp(-pow((p.y - uFloorY) / 0.08, 2.0)) * 0.05 * (0.5 + uMid);
+  // A studio backdrop lit from above, and a glossy floor that mirrors the bobs.
+  vec3 col = mix(palette(0.0) * 0.35 + 0.012, palette(0.0) * 0.08, smoothstep(uFloorY, 0.5, p.y));
+  col += palette(0.4) * exp(-pow((p.y - uFloorY - 0.25) / 0.35, 2.0)) * exp(-p.x * p.x * 1.5) * 0.06 * (0.6 + uMid);
+  if (p.y < uFloorY) {
+    float fy = (uFloorY - p.y);
+    col = palette(0.0) * 0.25 + 0.01 - fy * 0.1;
+    for (int i = 0; i < NB; i++) {
+      vec4 rf = texelFetch(uData, ivec2(i, TR + 3), 0);
+      vec4 ex = texelFetch(uData, ivec2(i, TR + 2), 0);
+      float d = length((p - rf.xy) * vec2(1.0, 1.6)) / max(rf.z, 1e-4);
+      col += palette(0.3 + 0.65 * float(i) / float(NB - 1)) * exp(-d * d * 0.8) * 0.18 * (0.4 + 1.5 * ex.x + 2.0 * ex.y);
+    }
+  }
+  col += palette(0.5) * exp(-pow((p.y - uFloorY) / (1.5 * px), 2.0)) * 0.15;
 
   // The bar the strings hang from.
   float bd = segDist(p, uBar0, uBar1);
@@ -124,10 +135,10 @@ void main() {
 
       // Camera: drifting around the front of the row, slightly above.
       const t = u.time;
-      const az = 0.55 * Math.sin(t * 0.045) + 0.25;
-      const el = 0.32 + 0.12 * Math.sin(t * 0.06);
-      const dist = 3.0 * P.distance * (u.width < u.height ? 1.6 : 1);
-      const target3 = [0, 0.5, 0];
+      const az = 0.45 * Math.sin(t * 0.045) + 0.2;
+      const el = 0.2 + 0.1 * Math.sin(t * 0.06);
+      const dist = 2.05 * P.distance * (u.width < u.height ? 1.7 : 1);
+      const target3 = [0, 0.62, 0];
       const eye = [Math.sin(az) * Math.cos(el) * dist, target3[1] + Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist];
       const view = mat4.lookAt(eye, target3, [0, 1, 0]);
       const proj = mat4.perspective(40 * Math.PI / 180, u.width / Math.max(1, u.height), 0.05, 50);
@@ -143,7 +154,7 @@ void main() {
       const rowW = 1.6;
       const barY = 1.15;
       const D = this.data;
-      const bobR = 0.032;
+      const bobR = 0.042;
       for (let i = 0; i < NB; i++) {
         const x = -rowW / 2 + (rowW * i) / (NB - 1);
         const L = this.len[i];
@@ -156,7 +167,12 @@ void main() {
           const q = project(x, barY - L * Math.cos(th), L * Math.sin(th));
           o = (kk * NB + i) * 4;
           D[o] = q[0]; D[o + 1] = q[1];
-          if (kk === 0) { D[o + 2] = bobR * proj[5] * 0.5 / q[2]; D[o + 3] = q[2]; }
+          if (kk === 0) {
+            D[o + 2] = bobR * proj[5] * 0.5 / q[2]; D[o + 3] = q[2];
+            const rq = project(x, -(barY - L * Math.cos(th)), L * Math.sin(th));
+            const ro = ((TR + 3) * NB + i) * 4;
+            D[ro] = rq[0]; D[ro + 1] = rq[1]; D[ro + 2] = bobR * proj[5] * 0.5 / rq[2] * 1.6;
+          }
         }
         // Extras: mid band energy for this bob, the highs' ripple, a depth fade.
         o = ((TR + 2) * NB + i) * 4;

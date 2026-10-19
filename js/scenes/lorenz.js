@@ -164,13 +164,35 @@ void main() {
         for (let t = 1; t < NT; t++) this.trails[t].s = [s0[0] + t * 1e-3, s0[1], s0[2]];
       }
 
-      // Camera orbit.
+      // Camera: orbit the attractor's actual centre (world = (x, z - 25, y)) and keep it framed.
+      // Centroid and extent come from a sparse sample of the trails, eased so the view glides.
+      let cx = 0, cy = 0, cz = 0, cnt = 0;
+      for (const tr of this.trails) {
+        for (let i = 0; i < tr.n; i += 25) { const o = i * 4; cx += tr.ring[o]; cy += tr.ring[o + 2] - 25; cz += tr.ring[o + 1]; cnt++; }
+      }
+      cx /= cnt; cy /= cnt; cz /= cnt;
+      let ext = 0;
+      for (const tr of this.trails) {
+        for (let i = 0; i < tr.n; i += 25) {
+          const o = i * 4;
+          ext = Math.max(ext, Math.hypot(tr.ring[o] - cx, tr.ring[o + 2] - 25 - cy, tr.ring[o + 1] - cz));
+        }
+      }
+      if (!this.camC) { this.camC = [cx, cy, cz]; this.camE = ext; }
+      const ease = 1 - Math.exp(-dt / 3);
+      this.camC[0] += (cx - this.camC[0]) * ease;
+      this.camC[1] += (cy - this.camC[1]) * ease;
+      this.camC[2] += (cz - this.camC[2]) * ease;
+      this.camE += (ext - this.camE) * ease;
       const t = u.time;
       const az = t * 0.07, el = 0.25 + 0.2 * Math.sin(t * 0.05);
-      const dist = 78 * P.distance * (u.width < u.height ? 1.4 : 1);
-      const eye = [Math.sin(az) * Math.cos(el) * dist, Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist];
-      const view = mat4.lookAt(eye, [0, 0, 0], [0, 1, 0]);
-      const proj = mat4.perspective(45 * Math.PI / 180, u.width / Math.max(1, u.height), 0.5, 400);
+      const fov = 45 * Math.PI / 180;
+      const fit = this.camE / Math.tan(fov / 2) / Math.min(1, u.width / u.height);
+      const dist = fit * 1.05 * P.distance;
+      const C = this.camC;
+      const eye = [C[0] + Math.sin(az) * Math.cos(el) * dist, C[1] + Math.sin(el) * dist, C[2] + Math.cos(az) * Math.cos(el) * dist];
+      const view = mat4.lookAt(eye, C, [0, 1, 0]);
+      const proj = mat4.perspective(fov, u.width / Math.max(1, u.height), 0.5, 600);
       mat4.multiply(proj, view, this.vp);
 
       gl.disable(gl.DEPTH_TEST);

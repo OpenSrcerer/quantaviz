@@ -14,6 +14,7 @@
   const NS = 6, NL = 4;
   const RP = 7.0;           // planet radius in scene units (horizon curvature)
   const ALT = 0.42;
+  const smooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
 
   const FS = `#version 300 es
 precision highp float;
@@ -153,17 +154,19 @@ void main() {
     }
     _jet(lat, bands) { return 0.55 * Math.sin(lat * 6.0 * bands) + 0.2 * Math.sin(lat * 13.0 * bands + 1.0); }
     _storm(strength, ahead, side) {
-      const i = this.nextS;
-      this.nextS = (this.nextS + 1) % NS;
+      // Only into a free slot, and not too often: a live storm is never replaced (that popped).
+      let i = -1;
+      for (let j = 0; j < NS; j++) if (this.stormAge[j] >= this.stormLife[j]) { i = j; break; }
+      if (i < 0) return;
       const hx = Math.sin(this.headA), hz = Math.cos(this.headA);
-      const d = ahead === undefined ? 1.5 + Math.random() * 2.5 : ahead;
+      const d = ahead === undefined ? 3.2 + Math.random() * 2.0 : ahead;   // born far ahead, near the horizon
       const sd = side === undefined ? (Math.random() - 0.5) * 2.5 : side;
       this.storms[i * 4] = this.cam[0] + hx * d + hz * sd;
       this.storms[i * 4 + 1] = this.cam[1] + hz * d - hx * sd;
       this.storms[i * 4 + 2] = 0.12 + 0.18 * Math.random() * strength + 0.08;
       this.storms[i * 4 + 3] = 0;
       this.stormAge[i] = 0;
-      this.stormLife[i] = 22 + Math.random() * 10;
+      this.stormLife[i] = 30 + Math.random() * 15;
       this.stormStr = this.stormStr || new Float32Array(NS);
       this.stormStr[i] = (Math.random() < 0.6 ? 1 : -1) * (0.35 + 0.5 * strength);
     }
@@ -180,13 +183,14 @@ void main() {
       this.cam[0] += hx * sp * dt;
       this.cam[1] += hz * sp * dt;
       this.flow += dt * 0.07 * P.wind;
-      if (this.trig.update(k)) this._storm(audio.kick);
+      this.sinceStorm = (this.sinceStorm || 0) + dt;
+      if (this.trig.update(k) && this.sinceStorm > 5) { this.sinceStorm = 0; this._storm(audio.kick); }
       // Storms drift with their band's jet, swell in, live a while, fade out.
       this.stormStr = this.stormStr || new Float32Array(NS);
       for (let i = 0; i < NS; i++) {
         this.stormAge[i] += dt;
         const a = this.stormAge[i], life = this.stormLife[i];
-        const env = Math.min(1, a / 2) * Math.max(0, Math.min(1, (life - a) / 4));
+        const env = smooth(a / 6) * smooth((life - a) / 8);   // slow, eased swell and decay
         this.storms[i * 4 + 3] = a < life ? this.stormStr[i] * env * P.storms : 0;
         this.storms[i * 4] += this._jet(this.storms[i * 4 + 1], P.bands) * 0.07 * P.wind * dt * 3;
       }

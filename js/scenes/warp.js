@@ -9,7 +9,8 @@
  * In the corner a spacetime diagram (time up, light cones at 45°) plots your worldline in the
  * outside world's frame: while you are slower than light it stays inside the cone; at warp it
  * tips flatter than 45° into the forbidden "elsewhere".
- *   bass  -> kicks charge the drive: warp jumps that surge you past c and coast back down
+ *   bass  -> kicks fill the drive charge (the bar on the diagram); full charge jumps you past
+ *            c for a few seconds, then you drop back and it recharges; kicks also surge sub-light
  *   mids  -> the bubble wall's glow
  *   highs -> particle impacts flashing on the front of the bubble
  */
@@ -35,6 +36,7 @@ uniform vec3 uYPR;         // yaw, pitch, roll
 uniform vec2 uWL[NWL];     // worldline points (x, t), relative to now, in c = 1 units
 uniform vec3 uImp[NIMP];   // screen x, y, age
 uniform float uWT;         // diagram half range (s)
+uniform float uCharge;     // drive charge 0..1
 
 mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
 mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
@@ -155,6 +157,11 @@ void main() {
       }
       ink += vec3(1.0) * exp(-dot(l, l) / (fw * fw * 4.0)) * 2.0;     // now
     }
+    // Drive charge along the top edge.
+    if (l.y > 1.0 && l.y < 1.08 && abs(l.x) < 1.0) {
+      float on = step((l.x + 1.0) * 0.5, uCharge);
+      ink += mix(palette(0.6), vec3(1.0, 0.95, 0.8), step(0.999, uCharge)) * on * (0.6 + 0.6 * uCharge);
+    }
     col += ink;
   }
   col *= 0.65 + 0.55 * uIntensity;
@@ -167,6 +174,7 @@ void main() {
       this.prog = ctx.fsProgram(FS, 'warp');
       this.trig = new VIZ.KickTrigger(0.35);
       this.charge = 0;
+      this.warpT = 0;
       this.speed = 0.3;
       this.vel = 0;
       this.dist = 0;
@@ -182,11 +190,21 @@ void main() {
       const dt = Math.min(u.dt, 0.05);
       const P = u.params;
       const hit = this.trig.update(audio.kick);
-      if (hit) this.charge = Math.min(3.5, this.charge + hit * 0.9 * P.jump);
-      this.charge *= Math.exp(-dt / (2.2 * P.coast));
-      // Speed follows cruise + charge through a soft spring (it accelerates, never snaps).
-      const goal = P.cruise + this.charge;
-      const Kp = 14, C = 2 * Math.sqrt(Kp) * 0.9;
+      // The drive: kicks fill the charge; when it is full the ship jumps to warp for a few seconds,
+      // then drops back below light speed and the charge starts again (after a short cooldown).
+      // Between jumps a kick only gives a small sub-light surge.
+      this.cool = Math.max(0, (this.cool || 0) - dt);
+      if (this.warpT > 0) {
+        this.warpT -= dt;
+        if (this.warpT <= 0) { this.cool = 2.5; this.charge = 0; }
+      } else if (hit && this.cool <= 0) {
+        this.charge = Math.min(1, this.charge + hit * 0.11 * P.jump);
+        if (this.charge >= 1) this.warpT = 3.2 * P.coast;
+      }
+      if (this.warpT <= 0 && !hit) this.charge = Math.max(0, this.charge - dt * 0.015);   // leaks slowly in quiet passages
+      this.surge = Math.max((this.surge || 0) * Math.exp(-dt / 0.6), hit ? hit * 0.3 : 0);
+      const goal = this.warpT > 0 ? 2.4 : Math.min(0.92, P.cruise + this.surge);
+      const Kp = 9, C = 2 * Math.sqrt(Kp) * 0.95;
       this.vel += (Kp * (goal - this.speed) - C * this.vel) * dt;
       this.speed = Math.max(0, this.speed + this.vel * dt);
       const s = this.speed;
@@ -220,7 +238,7 @@ void main() {
       this.ctx.setCommon(p, audio, u);
       p.f('uBeta', beta).f('uWarp', warp).f('uSpeed', s).f('uDist', this.dist)
         .f3('uYPR', 0.18 * Math.sin(t * 0.04) + 0.6, 0.1 * Math.sin(t * 0.031), 0.12 * Math.sin(t * 0.027))
-        .f2v('uWL', this.wl).f3v('uImp', this.imp).f('uWT', (NWL - 1) * WL_DT);
+        .f2v('uWL', this.wl).f3v('uImp', this.imp).f('uWT', (NWL - 1) * WL_DT).f('uCharge', this.warpT > 0 ? 1 : this.charge);
       this.ctx.drawQuad();
     }
     dispose() { this.prog.dispose(); }
@@ -229,11 +247,11 @@ void main() {
   VIZ.registerScene({
     id: 'warp',
     name: 'Warp Drive',
-    blurb: 'Inside an Alcubierre warp bubble. Kicks charge the drive past light speed; the stars crowd forward and streak. The spacetime diagram shows your worldline leaving the light cone.',
+    blurb: 'Inside an Alcubierre warp bubble. Kicks charge the drive; when it is full you jump past light speed, then drop back. The diagram shows your worldline leaving the light cone.',
     params: [
       { key: 'cruise', label: 'Cruise speed (c)', min: 0, max: 0.95, step: 0.01, value: 0.35, fmt: (v) => v.toFixed(2) + ' c' },
-      { key: 'jump', label: 'Warp charge per kick', min: 0, max: 2, step: 0.05, value: 1 },
-      { key: 'coast', label: 'Coast time', min: 0.3, max: 3, step: 0.05, value: 1 },
+      { key: 'jump', label: 'Drive charge per kick', min: 0.2, max: 3, step: 0.05, value: 1 },
+      { key: 'coast', label: 'Time at warp', min: 0.3, max: 3, step: 0.05, value: 1 },
       { key: 'impacts', label: 'Impacts on highs', min: 0, max: 1, step: 0.05, value: 0.8 },
     ],
     create: (ctx) => new WarpScene(ctx),

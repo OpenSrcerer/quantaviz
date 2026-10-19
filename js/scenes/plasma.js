@@ -56,14 +56,17 @@ void main() {
       float seed = f.w;
       float ti = float(i) / float(NF - 1);
       float e = bandMid(ti);
-      // Lateral wander (screen units) that grows away from the electrode and crawls with time.
-      float wob = (noise2(vec2(rn * 5.0 - uTime * 1.3, seed)) - 0.5) * 0.11 * sin(3.14159 * min(rn / rEnd, 1.0));
-      wob += (noise2(vec2(rn * 14.0 - uTime * 3.0, seed + 9.0)) - 0.5) * 0.02;
+      if (f.z <= 0.001) continue;
+      // A jagged channel: three octaves of wander, re-seeded for every strike, writhing fast.
+      float env = sin(3.14159 * min(rn / rEnd, 1.0));
+      float wob = (noise2(vec2(rn * 6.0 - uTime * 2.5, seed)) - 0.5) * 0.16 * env;
+      wob += (noise2(vec2(rn * 19.0 - uTime * 6.0, seed + 9.0)) - 0.5) * 0.05 * (0.3 + env);
+      wob += (noise2(vec2(rn * 55.0, uTime * 18.0 + seed)) - 0.5) * 0.014;
       float d = r * adiff(phi, f.x) - wob * R;
-      float w = (0.0025 + 0.004 * e + 0.003 * uBurst) * (0.6 + 0.6 * rn);
-      float crack = 1.0 + (uHigh * 1.5 + uHighPulse * 2.0) * (noise2(vec2(rn * 30.0, uTime * 25.0 + seed)) - 0.4);
-      float lit = (0.35 + 2.0 * e + 1.5 * uBurst) * f.z * crack;
-      float core = exp(-d * d / (w * w)) * 1.4 + exp(-abs(d) / (w * 6.0)) * 0.25;
+      float w = (0.0012 + 0.0018 * e + 0.0015 * uBurst) * (0.7 + 0.5 * rn);
+      float crack = 1.0 + (uHigh * 1.2 + uHighPulse * 1.8) * (noise2(vec2(rn * 30.0, uTime * 25.0 + seed)) - 0.4);
+      float lit = (0.25 + 0.9 * e + 0.6 * uBurst) * f.z * crack;
+      float core = exp(-d * d / (w * w)) * 1.2 + exp(-abs(d) / (w * 7.0)) * 0.12;
       // Fork near the glass.
       float fk = smoothstep(0.55, 0.75, rn / rEnd);
       if (fk > 0.0) {
@@ -75,11 +78,11 @@ void main() {
       // Contact spot on the glass.
       vec2 ep = vec2(cos(f.x), sin(f.x)) * rEnd * R;
       float de = length(p - ep);
-      glow += palette(0.95) * (exp(-de * de / 0.0003) * 0.8 + exp(-de / 0.02) * 0.1) * lit * (0.5 + 1.5 * uHighPulse);
+      glow += palette(0.95) * (exp(-de * de / 0.0002) * 0.5 + exp(-de / 0.02) * 0.06) * lit * (0.5 + 1.5 * uHighPulse);
     }
     // The electrode.
     float re = r / (R * 0.13);
-    glow += palette(0.9) * (exp(-re * re) * 1.5 + exp(-re) * 0.4) * (0.8 + 2.5 * uBurst);
+    glow += palette(0.9) * (exp(-re * re) * 1.0 + exp(-re) * 0.25) * (0.7 + 1.8 * uBurst);
     if (re < 1.0) glow += palette(0.3) * 0.25 * sqrt(1.0 - re * re);
     // Glass: rim reflection and a window highlight.
     float rim = pow(rn, 18.0);
@@ -99,14 +102,20 @@ void main() {
       this.ctx = ctx;
       this.prog = ctx.fsProgram(FS, 'plasma');
       this.trig = new VIZ.KickTrigger(0.35);
+      // Each slot is one strike: it flickers for a fraction of a second, then waits and strikes
+      // again somewhere else with a new shape.
       this.fil = [];
-      for (let i = 0; i < NF; i++) {
-        const a = Math.random() * TAU;
-        this.fil.push({ a, target: a, drift: (Math.random() - 0.5) * 0.25, seed: Math.random() * 100, ph: Math.random() * TAU });
-      }
+      for (let i = 0; i < NF; i++) this.fil.push({ a: Math.random() * TAU, age: 9, life: 0, wait: Math.random() * 0.5, seed: 0, ph: Math.random() * TAU, amp: 1 });
       this.data = new Float32Array(NF * 4);
       this.burst = 0;
       this.touch = 0;
+    }
+    _strike(f, near, amp) {
+      f.a = near === undefined ? Math.random() * TAU : near + (Math.random() - 0.5) * 0.5;
+      f.age = 0;
+      f.life = 0.12 + Math.random() * 0.45;
+      f.seed = Math.random() * 1000;
+      f.amp = amp;
     }
     resize() { /* fullscreen shader */ }
     render(target, audio, u) {
@@ -114,31 +123,39 @@ void main() {
       const P = u.params;
       const asp = u.width / u.height;
       const R = 0.38 * Math.min(1, asp * 0.8);
-      const hit = this.trig.update(audio.kick);
-      if (hit) {
-        this.burst = Math.max(this.burst, hit * P.burst);
-        for (const f of this.fil) f.target = f.a + (Math.random() - 0.5) * 2.4 * hit * P.burst;
-      }
-      this.burst *= Math.exp(-dt / 0.18);
-      // Pointer: touching the glass pulls filaments to it.
       const ptx = (u.pointer.x - 0.5) * asp, pty = u.pointer.y - 0.5 - 0.03;
       const inside = Math.hypot(ptx, pty) < R * 1.05;
       this.touch += ((u.pointer.down && inside ? 1 : 0) - this.touch) * (1 - Math.exp(-dt / 0.15));
       const ta = Math.atan2(pty, ptx);
+      const hit = this.trig.update(audio.kick);
+      if (hit) {
+        this.burst = Math.max(this.burst, hit * P.burst);
+        for (const f of this.fil) this._strike(f, undefined, 1 + hit * P.burst);   // every channel fires at once
+      }
+      this.burst *= Math.exp(-dt / 0.15);
+      // Strike rate rises with the mids.
+      const rate = (0.5 + 2.5 * Math.min(1, audio.mid * 1.3)) * P.crawl;
       for (let i = 0; i < NF; i++) {
         const f = this.fil[i];
-        // Convection: a slow drift plus wander; kicks set a new target that is eased toward.
-        f.target += dt * (f.drift + 0.35 * Math.sin(u.time * 0.23 + f.ph)) * P.crawl;
-        let goal = f.target;
-        if (this.touch > 0.01 && i % 2 === 0) {
-          const d = Math.atan2(Math.sin(ta - f.target), Math.cos(ta - f.target));
-          goal = f.target + d * this.touch;
+        f.age += dt;
+        let env = 0;
+        if (f.age < f.life) {
+          // Snap on, flicker, die away.
+          const k = f.age / f.life;
+          const flick = Math.random() < 0.25 ? 0.35 : 1;
+          env = Math.min(1, f.age / 0.02) * (1 - k * k) * flick * f.amp;
+          f.a += dt * 0.6 * Math.sin(u.time * 3 + f.ph);              // writhes a little while alive
+        } else {
+          f.wait -= dt * rate;
+          if (f.wait <= 0) {
+            f.wait = 0.1 + Math.random() * 0.6;
+            this._strike(f, this.touch > 0.3 && i % 2 === 0 ? ta : undefined, 1);
+          }
         }
-        f.a += Math.atan2(Math.sin(goal - f.a), Math.cos(goal - f.a)) * (1 - Math.exp(-dt / 0.12));
-        const depth = 0.5 + 0.5 * Math.sin(u.time * 0.21 + f.ph);   // turning toward / away from us
+        const depth = 0.5 + 0.5 * Math.sin(u.time * 0.21 + f.ph);
         this.data[i * 4] = f.a;
         this.data[i * 4 + 1] = 0.9 + 0.1 * depth;
-        this.data[i * 4 + 2] = 0.45 + 0.55 * depth;
+        this.data[i * 4 + 2] = env * (0.5 + 0.5 * depth);
         this.data[i * 4 + 3] = f.seed;
       }
       const p = this.prog.use();
@@ -152,10 +169,10 @@ void main() {
   VIZ.registerScene({
     id: 'plasma',
     name: 'Plasma Globe',
-    blurb: 'Crawling plasma filaments, one per mid band. Kicks fire an arc burst; highs make them crackle. Hold the mouse on the glass to pull them to your finger.',
+    blurb: 'Plasma strikes flicker from the electrode to the glass, faster with the mids. Kicks fire every channel at once; hold the mouse on the glass to draw them to your finger.',
     params: [
       { key: 'burst', label: 'Arc burst on kicks', min: 0, max: 2, step: 0.05, value: 1 },
-      { key: 'crawl', label: 'Crawl speed', min: 0, max: 3, step: 0.05, value: 1 },
+      { key: 'crawl', label: 'Strike rate', min: 0.2, max: 3, step: 0.05, value: 1 },
     ],
     create: (ctx) => new PlasmaScene(ctx),
   });
