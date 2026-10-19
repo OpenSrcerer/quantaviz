@@ -1,8 +1,9 @@
 # Quanta — a physics playground that listens to your desktop
 
-Quanta is a real-time audio visualizer for Windows built from scratch with WebGL2 and the Web Audio
-API. No installs, no frameworks, no network: double-click `Start-Quanta.cmd` and it opens in an
-Edge app window, listening to whatever Windows is playing.
+Quanta is a real-time audio visualizer built from scratch with WebGL2 and the Web Audio API. It
+runs in the browser on Windows, Linux and macOS. No installs, no frameworks, no network: on Windows
+double-click `Start-Quanta.cmd`, on Linux or macOS run `./start-quanta.sh`, and it opens in a
+browser app window, listening to whatever your computer is playing.
 
 Instead of the usual bar spectrum, every scene is a small physics simulation that the music drives:
 
@@ -62,6 +63,8 @@ toughness, gravity-well depth, grid resolution or particle count. Settings persi
 
 ## Running it
 
+### Windows
+
 1. Double-click **`Start-Quanta.cmd`** (or run `serve.ps1` in PowerShell). A tiny localhost web
    server starts (built into Windows PowerShell, nothing to install) and Edge opens an app window.
 2. Click **Desktop audio**. In the share dialog pick **Entire screen** and switch on
@@ -72,7 +75,30 @@ toughness, gravity-well depth, grid resolution or particle count. Settings persi
 Other sources: **Microphone**, an **audio file** (or drop one on the window), or the built-in
 **demo track** (a small synthwave loop synthesized live) if you just want to look.
 
-Closing the Edge window and the console window stops everything. The server only serves the files
+### Linux (and macOS)
+
+1. Run **`./start-quanta.sh`** from a terminal (options: `--port N`, `--no-browser`). It needs only
+   `python3`, which every mainstream distribution ships. A localhost server starts and Chrome,
+   Chromium, Edge or Brave opens in an app window (falling back to your default browser).
+2. Pick a source as above. Desktop audio on Linux depends on the browser:
+   - **Screen share with system audio.** The launcher starts the browser with PulseAudio /
+     PipeWire loopback enabled, so recent Chrome and Chromium offer *Share system audio* when you
+     pick *Entire screen*. This only applies if the browser was not already running when the
+     launcher opened it; close other browser windows first if the checkbox is missing.
+   - **Monitor source as a microphone** (works in every browser, Firefox included). Click
+     **Microphone**, then route the browser to your output's monitor: in `pavucontrol`, on the
+     *Recording* tab, switch the browser's stream to *Monitor of …*, or make the monitor the
+     default input before you click:
+     `pactl set-default-source "$(pactl get-default-sink).monitor"`.
+3. Press `Ctrl+C` in the terminal to stop the server.
+
+On macOS Chrome cannot capture system audio; use a loopback device (e.g. BlackHole) as the
+microphone, or share a single browser tab with its audio.
+
+On Wayland, browsers do not report the window position, so *move the window* physics stay idle;
+everything else is the same.
+
+Closing the browser window and the console window stops everything. The server only serves the files
 in this folder, only to this machine. Nothing is recorded or sent anywhere.
 
 > `index.html` can also be opened directly, but browsers are stricter about capture permissions on
@@ -111,8 +137,9 @@ resolution.
 ## Project layout
 
 ```
-Start-Quanta.cmd        double-click launcher (calls serve.ps1)
-serve.ps1               localhost static server (HttpListener) + opens Edge in app mode
+Start-Quanta.cmd        Windows double-click launcher (calls serve.ps1)
+serve.ps1               Windows localhost static server (HttpListener) + opens Edge in app mode
+start-quanta.sh         Linux / macOS launcher: python3 localhost server + Chromium app window
 index.html              page shell, start screen, HUD, settings drawer
 css/style.css
 js/gl.js                WebGL2 toolkit: programs, render targets, mat4, shared GLSL snippets
@@ -143,6 +170,8 @@ visible change must be driven by `uKick`.
 
 - **"No sound is arriving"** — you probably shared a window or a tab without audio. Click *change*
   next to the source name and re-share *Entire screen* with *Share system audio* on.
+- **Share dialog has no audio checkbox on Linux** — see the Linux section above: close all
+  browser windows and relaunch with `./start-quanta.sh`, or use the monitor source as a microphone.
 - **Share dialog has no audio checkbox** — use Microsoft Edge or Google Chrome; Firefox cannot
   capture system audio.
 - **Black screen / "can't start"** — the browser has no WebGL2 (hardware acceleration disabled?).
