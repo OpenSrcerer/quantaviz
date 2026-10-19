@@ -243,6 +243,9 @@
       this.hitRelease = 0.18;   // seconds a hit takes to fade (user: Kick decay)
       this.hitThreshold = 0.35; // attacks below this fraction of a typical one are ignored (user: Kick threshold)
       this.kickGateDb = -46;    // kick band must be at least this loud (dBFS) for a hit to count (user: Kick level gate)
+      this.hitFloor = 0.05;     // smallest attack that can count or train the reference (~3.5 dB)
+      this.refFloor = 0.075;    // the typical-attack reference never drops below this (~5 dB)
+      this.rearmDb = 4;         // after a hit the band must dip this many dB before another hit (one hit per note)
       this._hit = {
         bass: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
         mid: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
@@ -332,6 +335,8 @@
         fluxHigh: [idx(2500), idx(14000)],
       };
       this.ranges = this._ranges;
+      const i0 = Math.max(1, Math.ceil(35 / binW)), i1 = Math.max(i0, Math.floor(100 / binW));
+      this._kickBins = [i0, i1];
     }
 
     /** Smoothed band energy at t in [0,1] (log frequency, 32 Hz .. 16 kHz). */
@@ -381,7 +386,7 @@
       if (this.mediaEl && !this.mediaEl.paused) this.mediaEl.pause();
       this.active = false;
       // Forget the hit detectors' last values so a new source doesn't start with a false hit.
-      for (const k of Object.keys(this._hit)) { this._hit[k].fast = undefined; this._hit[k].slow = undefined; this._hit[k].ref = 0.2; this._hit[k].cur = 0; this._hit[k].raw = 0; }
+      for (const k of Object.keys(this._hit)) { const h = this._hit[k]; h.fast = undefined; h.slow = undefined; h.ref = 0.2; h.cur = 0; h.raw = 0; h.armed = true; }
       this._kickEnv = 0;
     }
 
@@ -577,9 +582,13 @@
       this.bass += (eBass - this.bass) * (eBass > this.bass ? aA2 : aR2);
       this.mid += (eMid - this.mid) * (eMid > this.mid ? aA2 : aR2);
       this.high += (eHigh - this.high) * (eHigh > this.high ? aA2 : aR2);
-      // Kick detection runs on the RAW kick band (dB-linear, before the global auto-gain), so the
-      // mids can neither shrink nor inflate it, and a dB jump means the same at any volume.
-      const eKick = this._mean(this.bandsRaw, r.kick);
+      // Kick detection runs on the RAW kick band (before the global auto-gain, so the mids can
+      // neither shrink nor inflate it), measured as the band's total POWER in dB: a gliding 808
+      // moving between FFT bins keeps a steady power, whereas the mean of per-bin dB wobbles.
+      let pw = 0, cnt = 0;
+      for (let i = this._kickBins[0]; i <= this._kickBins[1]; i++) { const d = this._fft[i]; if (d > -200) pw += Math.pow(10, d / 10); cnt++; }
+      const kickDb = cnt && pw > 0 ? 10 * Math.log10(pw / cnt) : -200;
+      const eKick = Math.max(0, (kickDb + 2 - MIN_DB) / (MAX_DB - MIN_DB));
       this._kickEnv = this._hitEnvelope(this._hit.bass, eKick, this._kickEnv || 0, dt, this.kickGateDb);
       this.kick = clamp(this._kickEnv * this.drive.bass, 0, 1);
       this.kickRaw = this._hit.bass.raw;      // same normalisation, no release: the instantaneous hit level
@@ -694,7 +703,11 @@
      *  typical attack below which a hit is ignored; a typical hit reads ~0.85, a strong one 1.
      *  Instant attack, `hitRelease` seconds of release. A sustained note counts only at its start. */
     _hitEnvelope(st, e, prev, dt, gateDb) {
-      if (st.fast === undefined) { st.fast = e; st.slow = e; st.ref = 0.2; st.cur = 0; }
+      if (st.fast === undefined) {
+        st.fast = e; st.slow = e; st.ref = 0.2; st.cur = 0;
+        st.armed = true; st.hitLevel = 0; st.minSince = 0; st.sinceHit = 10; st.attackV = 0; st.attackLevel = 0;
+      }
+      const dbRange = MAX_DB - MIN_DB;
       st.fast += (e - st.fast) * (1 - Math.exp(-dt / 0.008));
       st.slow += (e - st.slow) * (1 - Math.exp(-dt / 0.09));
       const rise = Math.max(0, st.fast - st.slow);
@@ -702,25 +715,40 @@
       // noise wobbles by tens of dB, so without this quiet passages produce phantom hits.
       let gate = 1;
       if (gateDb !== undefined) {
-        const levelDb = st.fast * (MAX_DB - MIN_DB) + MIN_DB - 2;   // fast envelope back to dBFS (tilt removed)
+        const levelDb = st.fast * dbRange + MIN_DB - 2;   // fast envelope back to dBFS (tilt removed)
         const t = clamp((levelDb - (gateDb - 3)) / 6, 0, 1);
         gate = t * t * (3 - 2 * t);
       }
+      const floor = this.hitFloor, refFloor = this.refFloor;
       // Learn the typical attack: follow each attack to its peak; when it has clearly ended, fold
       // its size into a running average. Smaller attacks pull the reference down faster than big
       // ones push it up, so a dense section (kicks on top of bass) is recognised within a couple of
       // bars and one huge isolated hit does not raise the bar for long.
+      let attackEnded = false;
       if (rise > st.cur) st.cur = rise;
       else if (st.cur > 0 && rise < st.cur * 0.5) {
-        if (st.cur > HIT_FLOOR) st.ref += (st.cur - st.ref) * (st.cur < st.ref ? 0.3 : 0.12);
+        if (st.cur > floor) st.ref += (st.cur - st.ref) * (st.cur < st.ref ? 0.3 : 0.12);
         st.cur = 0;
+        attackEnded = true;
       }
-      // Re-sensitise slowly after a quiet stretch, never below ~1.5x the noise floor.
-      st.ref = Math.max(HIT_FLOOR * 1.5, st.ref * Math.exp(-dt / 20));
+      st.ref = Math.max(refFloor, st.ref * Math.exp(-dt / 20));
       const x = rise / st.ref;
       const thr = clamp(this.hitThreshold, 0, 0.95);
       let v = clamp((x - thr) / (1.15 - thr), 0, 1);
       v = v * v * (3 - 2 * v) * gate;
+      // One hit per note. After a hit the detector is disarmed until the band has dipped `rearmDb`
+      // below that hit's level (or a clearly bigger attack arrives), so the wobble inside a long
+      // 808 can't re-trigger it: the envelope fires once at the note's onset and then relaxes.
+      st.sinceHit += dt;
+      st.minSince = Math.min(st.minSince, st.fast);
+      if (!st.armed && (st.hitLevel - st.minSince > this.rearmDb / dbRange || x > 2.2)) st.armed = true;
+      if (!st.armed) v = 0;
+      if (v > st.attackV) st.attackV = v;
+      if (st.fast > st.attackLevel) st.attackLevel = st.fast;
+      if (attackEnded) {
+        if (st.attackV > 0.3 && st.armed) { st.armed = false; st.hitLevel = st.attackLevel; st.minSince = st.fast; st.sinceHit = 0; }
+        st.attackV = 0; st.attackLevel = st.fast;
+      }
       st.raw = v;
       return v > prev ? v : prev + (v - prev) * (1 - Math.exp(-dt / this.hitRelease));
     }

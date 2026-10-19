@@ -28,9 +28,11 @@ Every scene maps the spectrum the same way, so what you see always means the sam
 The big visible bass response in every scene (horizon and disk size, globe radius, bag squeeze,
 spacetime depth and waves, magnetic field, the global zoom punch) uses a *kick envelope* that
 reacts to change, not level: the attack of each hit in the 35–100 Hz kick band (the gap between a
-fast and a slow envelope of the band's dB level, so a kick riding on a loud bassline counts just
-like an isolated one), measured against the *typical* recent attack rather than the strongest,
-with a 2 dB noise floor, an instant attack and a short release. *Kick threshold* (default 35%)
+fast and a slow envelope of the band's power in dB, so a kick riding on a loud bassline counts just
+like an isolated one and a gliding 808 doesn't read as repeated hits), measured against the
+*typical* recent attack rather than the strongest, with a ~3.5 dB noise floor, an instant attack
+and a short release. One note is one event: after a hit the detector stays disarmed until the
+band has dipped a few dB below that hit, so a long 808 fires once at its onset and then relaxes. *Kick threshold* (default 35%)
 sets how small a hit may be relative to a typical one before it is ignored, *Kick level gate*
 (default −46 dBFS) the minimum bass loudness below which nothing counts (quiet passages are mostly
 noise, which wobbles wildly in dB), and *Kick decay* how long a hit shows. A typical hit reads about 0.85, a hard one 1, and a sustained note counts only when
