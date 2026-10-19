@@ -16,6 +16,14 @@
   const MAX_DB = -18;
   const TILT_DB_PER_OCT = 2.6;   // pink-noise style compensation so highs are visible
   const FLUX_HISTORY = 48;
+  // Start-up. Every reference below is learned from the music, so at first the analyser knows
+  // nothing about the track. It starts conservative: the typical-hit reference begins high and
+  // is learned quickly from above, and hits and onsets ease in over the first seconds of sound.
+  const REF_START = 0.45;     // initial typical-attack reference (~30 dB): early hits read modest
+  const FAST_LEARN = 8;       // attacks learned at the fast rate before the normal rates apply
+  const WARM_SECS = 4;        // seconds of sound over which hits and onsets ease in
+  const WARM_FROM = 0.35;     // how strong they read at the very start (0..1)
+  const REWARM_SILENCE = 3;   // after this much true silence (between tracks), ease in again
   // Band energies are linear in dB (0.1 = 7 dB), so attacks are dB jumps: a kick on top of a sustained
   // bassline adds only 5-12 dB (0.07-0.17), an isolated kick 30-40 dB (0.4-0.6). The floor is ~2 dB,
   // the smallest measured rise that may count (noise wobble stays below it).
@@ -247,9 +255,9 @@
       this.refFloor = 0.075;    // the typical-attack reference never drops below this (~5 dB)
       this.rearmDb = 4;         // after a hit the band must dip this many dB before another hit (one hit per note)
       this._hit = {
-        bass: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
-        mid: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
-        high: { fast: undefined, slow: undefined, ref: 0.2, cur: 0, raw: 0 },
+        bass: { fast: undefined, slow: undefined, ref: REF_START, cur: 0, raw: 0, n: 0 },
+        mid: { fast: undefined, slow: undefined, ref: REF_START, cur: 0, raw: 0, n: 0 },
+        high: { fast: undefined, slow: undefined, ref: REF_START, cur: 0, raw: 0, n: 0 },
       };
       this.recentBeats = new Float32Array(8).fill(-100); // bass beat timestamps (seconds, same clock as update's `now`)
       this.recentBeatAmp = new Float32Array(8);          // strength (0..1) of each of those hits
@@ -284,6 +292,10 @@
       this._envFilled = 0;
       this._bpmTimer = 0;
       this._agcPeak = 0.6;
+      this._soundT = 0;          // seconds of sound since the source started (or since a long silence)
+      this._fluxN = 0;           // analysed frames since the source started (onset history fill)
+      this._midEnv = 0; this._highEnv = 0;
+      this.warm = WARM_FROM;
       this._ranges = null;
       this._listeners = {};
     }
@@ -386,8 +398,10 @@
       if (this.mediaEl && !this.mediaEl.paused) this.mediaEl.pause();
       this.active = false;
       // Forget the hit detectors' last values so a new source doesn't start with a false hit.
-      for (const k of Object.keys(this._hit)) { const h = this._hit[k]; h.fast = undefined; h.slow = undefined; h.ref = 0.2; h.cur = 0; h.raw = 0; h.armed = true; }
-      this._kickEnv = 0;
+      for (const k of Object.keys(this._hit)) { const h = this._hit[k]; h.fast = undefined; h.slow = undefined; h.ref = REF_START; h.cur = 0; h.raw = 0; h.n = 0; h.armed = true; }
+      this._kickEnv = 0; this._midEnv = 0; this._highEnv = 0;
+      this._soundT = 0; this._fluxN = 0; this.warm = WARM_FROM;
+      this._fluxHist.fill(0); this._fluxHistM.fill(0); this._fluxHistH.fill(0);
     }
 
     stop(reason) {
@@ -520,6 +534,7 @@
         for (let i = 0; i < NUM_BANDS; i++) { this.bands[i] *= k; this.peaks[i] *= k; this.bandsRaw[i] *= k; }
         this.bass *= k; this.mid *= k; this.high *= k; this.level *= k;
         this.kick *= k; this.midHit *= k; this.highHit *= k; this._kickEnv = (this._kickEnv || 0) * k;
+        this._midEnv *= k; this._highEnv *= k;
         this.beat *= decayB; this.beatPulse *= decayP; this.midPulse *= decayP; this.highPulse *= decayP;
         this.wave.fill(0);
         this._packBytes();
@@ -590,10 +605,15 @@
       const kickDb = cnt && pw > 0 ? 10 * Math.log10(pw / cnt) : -200;
       const eKick = Math.max(0, (kickDb + 2 - MIN_DB) / (MAX_DB - MIN_DB));
       this._kickEnv = this._hitEnvelope(this._hit.bass, eKick, this._kickEnv || 0, dt, this.kickGateDb);
-      this.kick = clamp(this._kickEnv * this.drive.bass, 0, 1);
+      // Start-up ease-in: hits and onsets reach full strength over the first seconds of sound.
+      const wk = clamp(this._soundT / WARM_SECS, 0, 1);
+      this.warm = WARM_FROM + (1 - WARM_FROM) * wk * wk * (3 - 2 * wk);
+      this.kick = clamp(this._kickEnv * this.drive.bass * this.warm, 0, 1);
       this.kickRaw = this._hit.bass.raw;      // same normalisation, no release: the instantaneous hit level
-      this.midHit = this._hitEnvelope(this._hit.mid, eMid, this.midHit, dt);
-      this.highHit = this._hitEnvelope(this._hit.high, eHigh, this.highHit, dt);
+      this._midEnv = this._hitEnvelope(this._hit.mid, eMid, this._midEnv, dt);
+      this._highEnv = this._hitEnvelope(this._hit.high, eHigh, this._highEnv, dt);
+      this.midHit = this._midEnv * this.warm;
+      this.highHit = this._highEnv * this.warm;
 
       // --- waveform + level ---
       const tm = this._time, stride = FFT_SIZE / WAVE_LEN;
@@ -606,6 +626,8 @@
       lv = lv / (1 + 0.3 * lv);
       this.level += (lv - this.level) * (lv > this.level ? aA2 : aR2);
       this.silentFor = rms < 0.0015 ? this.silentFor + dt : 0;
+      if (this.silentFor > REWARM_SILENCE) { this._soundT = 0; this._fluxN = 0; }   // re-prime onsets too
+      else if (this.silentFor === 0) this._soundT += dt;
 
       // --- onset detection per band (spectral flux) ---
       const flux = this._flux(norm, this._prevNorm, r.flux);
@@ -620,22 +642,26 @@
       this.beatPulse *= decayP;
       this.midPulse *= decayP;
       this.highPulse *= decayP;
-      if (fluxM > thresholdM && now - this._lastMid > 0.12 && this.mid > 0.06) {
+      // Onsets compare against the recent flux average, which is meaningless until the history
+      // has filled once since the source started; until then nothing counts.
+      this._fluxN++;
+      const primed = this._fluxN > FLUX_HISTORY;
+      if (primed && fluxM > thresholdM && now - this._lastMid > 0.12 && this.mid > 0.06) {
         this.midOnset = true;
-        this.midPulse = clamp(0.6 + (fluxM - thresholdM) / (thresholdM + 1e-4) * 0.3, 0.6, 1);
+        this.midPulse = clamp(0.6 + (fluxM - thresholdM) / (thresholdM + 1e-4) * 0.3, 0.6, 1) * this.warm;
         this._lastMid = now;
       }
-      if (fluxH > thresholdH && now - this._lastHigh > 0.08 && this.high > 0.05) {
+      if (primed && fluxH > thresholdH && now - this._lastHigh > 0.08 && this.high > 0.05) {
         this.highOnset = true;
-        this.highPulse = clamp(0.6 + (fluxH - thresholdH) / (thresholdH + 1e-4) * 0.3, 0.6, 1);
+        this.highPulse = clamp(0.6 + (fluxH - thresholdH) / (thresholdH + 1e-4) * 0.3, 0.6, 1) * this.warm;
         this._lastHigh = now;
       }
-      if (flux > threshold && now - this._lastBeat > 0.16 && this.bass > 0.08) {
+      if (primed && flux > threshold && now - this._lastBeat > 0.16 && this.bass > 0.08) {
         const strength = clamp(0.55 + (flux - threshold) / (threshold + 1e-4) * 0.3, 0.55, 1);
         this.onset = true;
         this.beatCount++;
-        this.beat = Math.max(this.beat, strength);
-        this.beatPulse = 1;
+        this.beat = Math.max(this.beat, strength * this.warm);
+        this.beatPulse = this.warm;
         this._lastBeat = now;
         this.recentBeats.copyWithin(0, 1);
         this.recentBeats[7] = now;
@@ -704,7 +730,7 @@
      *  Instant attack, `hitRelease` seconds of release. A sustained note counts only at its start. */
     _hitEnvelope(st, e, prev, dt, gateDb) {
       if (st.fast === undefined) {
-        st.fast = e; st.slow = e; st.ref = 0.2; st.cur = 0;
+        st.fast = e; st.slow = e; st.ref = REF_START; st.cur = 0; st.n = 0;
         st.armed = true; st.hitLevel = 0; st.minSince = 0; st.sinceHit = 10; st.attackV = 0; st.attackLevel = 0;
       }
       const dbRange = MAX_DB - MIN_DB;
@@ -727,11 +753,19 @@
       let attackEnded = false;
       if (rise > st.cur) st.cur = rise;
       else if (st.cur > 0 && rise < st.cur * 0.5) {
-        if (st.cur > floor) st.ref += (st.cur - st.ref) * (st.cur < st.ref ? 0.3 : 0.12);
+        if (st.cur > floor) {
+          // The first few attacks are learned fast (from the high starting guess); after that,
+          // smaller attacks pull the reference down faster than big ones push it up.
+          const rate = st.n < FAST_LEARN ? 0.45 : (st.cur < st.ref ? 0.3 : 0.12);
+          st.ref += (st.cur - st.ref) * rate;
+          st.n++;
+        }
         st.cur = 0;
         attackEnded = true;
       }
-      st.ref = Math.max(refFloor, st.ref * Math.exp(-dt / 20));
+      // Drift down slowly so a quieter section is followed, but only while the band carries
+      // sound: in silence the reference holds, so music coming back isn't met by a hair trigger.
+      if (gate > 0.5 && e > 0.06) st.ref = Math.max(refFloor, st.ref * Math.exp(-dt / 20));
       const x = rise / st.ref;
       const thr = clamp(this.hitThreshold, 0, 0.95);
       let v = clamp((x - thr) / (1.15 - thr), 0, 1);

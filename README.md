@@ -134,6 +134,11 @@ hit doesn't make every following kick look small. After a hit the detector disar
 dips a few dB, so a long 808 is one event, not twelve. Below about −46 dBFS nothing counts at
 all, because in quiet passages the noise floor wobbles by tens of dB and reads as phantom kicks.
 
+It also starts out cautious. A new source (or music after a few seconds of silence) begins with
+a high guess for a typical hit and learns it from above, and the hits and onsets ease in over the
+first few seconds, so the opening of a track doesn't set everything off before Quanta knows how
+loud it is.
+
 All of that is tunable under *Band response* in the setup window (threshold, level gate, decay),
 alongside a drive slider per band.
 
