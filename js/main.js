@@ -54,6 +54,20 @@
     if (VIZ.scenes.some((s) => s.id === def.id)) { console.warn('[quanta] duplicate scene id', def.id); return; }
     VIZ.scenes.push(def);
   };
+  /** One event per kick, fired at the peak of the kick envelope (the Bubble Chamber's rule).
+   *  `update(audio.kick)` returns that peak (0..1) on the frame a significant kick tops out, else 0. */
+  VIZ.KickTrigger = class KickTrigger {
+    constructor(min = 0.35) { this.min = min; this.prev = 0; this.max = 0; this.fired = false; this.rise = false; }
+    update(k) {
+      let out = 0;
+      if (k > this.prev + 1e-3) { this.rise = true; if (k > this.max) this.max = k; }
+      if (this.rise && !this.fired && this.max > this.min && k < this.max * 0.97) { out = this.max; this.fired = true; }
+      // Re-arm once the envelope has fallen to half its peak; the next rise starts a fresh peak.
+      if (k < this.max * 0.5) { this.max = 0; this.fired = false; this.rise = false; }
+      this.prev = k;
+      return out;
+    }
+  };
 
   const PALETTES = [
     { name: 'Aurora', colors: ['#0a1430', '#1de9b6', '#7c4dff', '#ff4fd8'] },
@@ -607,7 +621,12 @@
       const k = e.key;
       if (k === ' ' || k === 'ArrowRight') { e.preventDefault(); this.stepScene(1); }
       else if (k === 'ArrowLeft') { e.preventDefault(); this.stepScene(-1); }
-      else if (k >= '1' && k <= '9') { const d = VIZ.scenes[+k - 1]; if (d) this.selectScene(d.id); }
+      else if (/^Digit\d$/.test(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // 1-9, 0 pick scenes 1-10; with Shift, 11-20. e.code, so Shift+digit works on any layout.
+        const n = (+e.code.slice(5) || 10) + (e.shiftKey ? 10 : 0);
+        const d = VIZ.scenes[n - 1];
+        if (d) this.selectScene(d.id);
+      }
       else if (k === 'f' || k === 'F') this.toggleFullscreen();
       else if (k === 'h' || k === 'H') { this.uiForceHidden = !this.uiForceHidden; $('#hud').classList.toggle('hidden', this.uiForceHidden); if (this.uiForceHidden) this.togglePanel(false); }
       else if (k === 's' || k === 'S') this.togglePanel();

@@ -15,6 +15,12 @@ Instead of the usual bar spectrum, every scene is a small physics simulation tha
 | **Starburst** | 20k–400k five-pointed stars simulated entirely on the GPU (transform feedback) with curl-noise flow, arranged on a thin hollow globe split into eight frequency wedges. | Each wedge bulges and glows with its slice of the mids, bass breathes the globe and kicks swell it outward, treble twinkles; moving the window throws the stars around. |
 | **Bubble Chamber** | A particle-detector photograph that paints itself: charged tracks curl in a magnetic field (radius ∝ momentum, opposite charges curl opposite ways), lose energy and spiral inward, neutrals decay into V-shaped pairs, delta electrons spin off, and the long exposure slowly fades. | Every significant kick is one collision at the centre, sized by the hit (a soft one a few tracks, a hard one a spray); the field strength follows the kick envelope; each track glows with its own mid band. *Idle spawn rate* adds background collisions from the edge (default 0: kicks only). Hold the mouse to create a magnetic anomaly. |
 | **Event Horizon** | A point-mass gravitational lens bends a sky of cartoon stars around a black hole with a hot accretion disk (Doppler beaming included). | Every star twinkles to its own frequency band, the disk is heated by the music, the horizon breathes with the bass, beats flare outward through the disk. |
+| **Supernova** | A massive star collapses and explodes: the shock front grows like a Sedov–Taylor blast wave (R ∝ t^0.4), breaks up into Rayleigh–Taylor fingers, bends the starlight behind it and leaves a fading remnant. | **Bass-led.** Every kick collapses the core (the star shrinks and goes white-hot) and launches one blast sized by the hit, and the camera recoils on a spring. Mids light the boiling surface and the ejecta filaments; highs throw sparks in the ejecta. |
+| **Pulsar** | A neutron star with its magnetic axis tilted against its spin axis, so two radio beams sweep the sky like a lighthouse; each pass over the line of sight is a pulse (a flash and an expanding radio ring). Dipole field lines and a pulsar-wind nebula surround it. | **Treble-led.** Every snare is a *glitch*: a sudden spin-up that magnetic braking bleeds off, so the star lurches round on each hit (with *Snares only* on, hi-hats just nudge it). Starquake cracks glow after a glitch; highs stream sparks along the beams and glints along the field lines. Mids brighten the beams and nebula. |
+| **Aurora** | Curtains of light over a mountain lake: a sharp lower edge, rays along the field lines, oxygen green fading to oxygen red, a nitrogen-violet fringe, mirrored in the water. | **Mid-led.** Each stretch of curtain is one mid band and rises and brightens with it; a mid onset sets off a substorm that spreads along the curtains. Highs make the rays flicker (pulsating aurora) and the stars twinkle; kicks send a sway through the curtains. |
+| **Ferrofluid** | A puddle of magnetic liquid over an electromagnet. Above a critical field it stands up in a hexagonal lattice of spikes (the Rosensweig instability) and heaps up over the magnet. Raymarched, shaded as black mirror-glossy liquid in a studio. | Kicks surge the coil current, so the spikes leap out across the puddle and relax. Mids set each spike's height around its field value and light the studio it reflects; highs flicker glints on the tips. Drag to move the magnet. |
+| **Wormhole** | An endless flight down a curving Einstein–Rosen throat ruled like spacetime, with light from the other universe at the far end. | Always flying forward; kicks hit the throttle, squeeze the throat and release a gravitational-wave ring that rushes past. Around each wall ring the mid spectrum runs once; highs streak star dust past the camera. |
+| **Double Slit** | Waves through two slits interfere; single photons land on the detector one by one (drawn from \|ψ\|²) and a long exposure builds the fringes from dots. The live \|ψ\|² curve sits beside the screen. | Every kick is a *which-way measurement*: detectors at the slits light up, the interference term vanishes, the wave behind the barrier splits in two and photons land in two plain bands, until the fringes return. The mid centroid sets the wavelength (fringe spacing and colour) and mids the wave brightness; highs fire bursts of photons. |
 
 ## The band rule
 
@@ -44,7 +50,7 @@ three global couplings (shake, glow, sparkle), so you can push or mute any of th
 
 ## Effects and palettes
 
-Six scenes become hundreds of looks: the *Effects* section layers independent post effects, each
+Twelve scenes become hundreds of looks: the *Effects* section layers independent post effects, each
 with its own slider, all persisted:
 
 mirror (horizontal / vertical / quad) · kaleidoscope (3–12 segments) · fractal tiling · space
@@ -109,7 +115,7 @@ in this folder, only to this machine. Nothing is recorded or sent anywhere.
 | Key | Action |
 | --- | --- |
 | `Space` / `→` / `←` | Next / previous scene |
-| `1`–`6` | Pick a scene directly |
+| `1`–`9`, `0` / `Shift`+`1`–`2` | Pick scene 1–10 / 11–12 directly |
 | `P` / `Shift+P` | Next / previous palette |
 | `R` | New random palette |
 | `E` / `C` | Shuffle effects / clear effects |
@@ -122,7 +128,7 @@ in this folder, only to this machine. Nothing is recorded or sent anywhere.
 | Mouse drag | Grab a quark / drop a mass / attract the wavefunction |
 | Move the window | Shove the physics (Quark Soup, Starburst, Spacetime) |
 
-URL parameters: `?scene=quarks|spacetime|wavefunction|starburst|chamber|horizon`, `?mute=1`.
+URL parameters: `?scene=quarks|spacetime|wavefunction|starburst|chamber|horizon|supernova|pulsar|aurora|ferrofluid|wormhole|doubleslit`, `?mute=1`.
 
 ## Performance
 
@@ -152,6 +158,12 @@ js/scenes/wavefunction.js  Schrödinger simulation (ping-pong float targets)
 js/scenes/starburst.js  GPU particles (transform feedback)
 js/scenes/chamber.js    Bubble Chamber (CPU tracks, long-exposure accumulation buffer)
 js/scenes/horizon.js    Event Horizon (single fragment shader)
+js/scenes/supernova.js  Supernova (single fragment shader, kick-triggered blasts)
+js/scenes/pulsar.js     Pulsar (single fragment shader, spin integrated in JS)
+js/scenes/aurora.js     Aurora (single fragment shader)
+js/scenes/ferrofluid.js Ferrofluid (raymarched heightfield)
+js/scenes/wormhole.js   Wormhole (polar tunnel mapping)
+js/scenes/doubleslit.js Double Slit (analytic waves + photon exposure buffer)
 ```
 
 ### Adding a scene
@@ -161,7 +173,8 @@ and add a `<script>` tag to `index.html`. A scene instance implements `resize(w,
 `render(target, audio, u)` and `dispose()`; the full contract, including what `audio` and `u`
 provide (bands, bass/mid/high, per-band onsets, palette, window motion, pointer), is documented at
 the top of `js/main.js`, together with the band rule every scene must follow. `js/scenes/horizon.js`
-is the smallest example. In GLSL use `bandLow(x)` / `bandMid(x)` / `bandHigh(x)`, the hit
+is the smallest example. To fire one event per kick (as Supernova and Wormhole do), use
+`new VIZ.KickTrigger()` and call `update(audio.kick)` each frame: it returns the hit's peak on the frame it tops out. In GLSL use `bandLow(x)` / `bandMid(x)` / `bandHigh(x)`, the hit
 envelopes `uKick` / `uMidHit` / `uHighHit` and the sharp onsets `uPulse` / `uMidPulse` /
 `uHighPulse`; in JS `audio.kick`, `audio.bandMid(x)` etc. Rule of thumb: the scene's largest
 visible change must be driven by `uKick`.
