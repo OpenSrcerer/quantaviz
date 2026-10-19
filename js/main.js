@@ -139,6 +139,9 @@
     sceneParams: {},
   };
   const STORAGE_KEY = 'quanta.settings.v2';
+  // Firefox implements screen sharing but never returns its audio, so desktop capture can't work there.
+  const IS_FIREFOX = /firefox|fxios/i.test(navigator.userAgent);
+  const FIREFOX_AUDIO = "Firefox can't capture system audio. Use Chrome or Edge, or pick Microphone and choose Stereo Mix.";
   const TAGLINES = [
     'Feed it sound. It does physics.',
     'Sound in, physics out.',
@@ -464,6 +467,13 @@
       const sticker = document.querySelector('.sticker');
       if (sticker) sticker.style.transform = `rotate(${(-1 - Math.random() * 3.5).toFixed(1)}deg)`;   // stuck on by hand
       $('#btnTip').addEventListener('click', () => { tip = (tip + 1) % TIPS.length; $('#tipText').textContent = TIPS[tip]; });
+      if (IS_FIREFOX) {
+        $('#ffNotice').classList.remove('hidden');
+        $('#desktopHint').classList.add('hidden');
+        const d = $('.src[data-src="desktop"]');
+        d.classList.add('unavailable');
+        d.querySelector('span:last-child').textContent = 'not available in Firefox';
+      }
       document.querySelectorAll('.src').forEach((b) => b.addEventListener('click', () => this.selectSource(b.dataset.src)));
       $('#btnSource').addEventListener('click', () => this.showHero());
       $('#fileInput').addEventListener('change', (e) => {
@@ -675,6 +685,7 @@
     /* ---------------- sources ---------------- */
     async selectSource(kind, file) {
       try {
+        if (kind === 'desktop' && IS_FIREFOX) { this.toast(FIREFOX_AUDIO, 'error', 7000); return; }
         if (kind === 'desktop') await this.audio.useDesktop();
         else if (kind === 'mic') await this.audio.useMic();
         else if (kind === 'file') { if (!file) { $('#fileInput').click(); return; } await this.audio.useFile(file); }

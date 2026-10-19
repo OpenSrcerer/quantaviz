@@ -28,6 +28,10 @@
         </div>
       </div>
       <p class="tag" id="tagline">Feed it sound. It does physics.</p>
+      <div class="warning" role="note">
+        <svg class="warn-icon" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 L30 28 H2 Z" fill="#f7d23e" stroke="#7a5b00" stroke-width="1.6" stroke-linejoin="round"/><rect x="14.6" y="11" width="2.8" height="9" rx="1" fill="#1b1b17"/><circle cx="16" cy="23.6" r="1.7" fill="#1b1b17"/></svg>
+        <p><b>Photosensitivity warning.</b> Quanta shows flashing lights, rapid colour changes and strobing patterns that can trigger seizures in people with photosensitive epilepsy. If that applies to you or anyone watching, don't use it. Stop at once if you feel dizzy, your vision changes or you start to twitch.</p>
+      </div>
       <fieldset class="group">
         <legend>Input channel</legend>
         <div class="sources">
@@ -58,7 +62,8 @@
         <div><b>Did you know?</b> <span id="tipText">Space skips to the next experiment.</span></div>
         <button class="btn small" id="btnTip">Next tip</button>
       </div>
-      <p class="hint">For desktop audio, pick <b>Entire screen</b> in the share dialog and tick <b>Share system audio</b>. Nothing is recorded and nothing leaves this machine.</p>
+      <p class="notice hidden" id="ffNotice"><b>Firefox can't capture system audio.</b> Its screen sharing sends the picture only, never the sound. Use Chrome or Edge, or pick <b>Microphone</b> and choose <b>Stereo Mix</b>.</p>
+      <p class="hint" id="desktopHint">For desktop audio, pick <b>Entire screen</b> in the share dialog and tick <b>Share system audio</b>. Nothing is recorded and nothing leaves this machine.</p>
       <p class="hint small keys"><kbd>Space</kbd> next &nbsp;<kbd>1</kbd>&ndash;<kbd>0</kbd> pick (<kbd>Shift</kbd> +10, <kbd>Alt</kbd> +20) &nbsp;<kbd>P</kbd> palette &nbsp;<kbd>E</kbd> effects &nbsp;<kbd>S</kbd> setup &nbsp;<kbd>F</kbd> fullscreen &nbsp;<kbd>H</kbd> hide</p>
     </div>
     <div class="statusbar"><span id="statusReady">Ready</span><span id="statusCount">experiments loaded</span><span>no network</span></div>

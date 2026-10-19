@@ -8,6 +8,9 @@ and doesn't talk to the network.
 It started as "what if the bar spectrum was a Schrödinger equation" and got out of hand. There are
 23 experiments now.
 
+> **Photosensitivity warning:** Quanta flashes, strobes and changes colour fast. It can trigger
+> seizures in people with photosensitive epilepsy. If that's you or anyone watching, don't use it.
+
 <img src="logo.svg" width="96" alt="Quanta Lab logo">
 
 ## Running it
