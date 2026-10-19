@@ -31,7 +31,7 @@ Instead of the usual bar spectrum, every scene is a small physics simulation tha
 | **Tokamak** | An open-frame fusion reactor (16 D-shaped field coils, central solenoid, poloidal rings) with a D-shaped plasma ring whose helical field lines (pitch set by the safety factor q) flow round. Raymarched coils, volumetric plasma; the camera circles. | Every kick is an edge-localised mode: the plasma edge erupts in filaments toward the wall and the core crashes briefly. Mids set the temperature; highs flicker edge turbulence. |
 | **Feynman Diagrams** | Spacetime scrolls by (time runs left to right) and particle interactions are written onto it in Feynman's notation, each drawing itself in time order with a quantum riding every line. | Kicks write annihilations and exchanges and surge the scroll; mid onsets write emissions and vacuum-polarisation loops; highs pop virtual-pair bubbles. |
 | **Reaction–Diffusion** | A BZ-style excitable medium (Barkley's model) on the GPU: broken wave fronts curl into rotating spirals that turn and collide forever, in a petri dish the camera pans across. | Kicks drop catalyst (expanding rings) and scratch lines that birth spiral pairs. Mids raise excitability; highs spark tiny new sources. |
-| **Warp Drive** | First person in an Alcubierre warp bubble. Below c the sky shows real relativistic aberration, Doppler colour and beaming; past c the stars streak, the bubble wall shimmers and blueshifted particles flash on its front. A spacetime diagram plots your worldline: inside the light cone below c, tipped into the forbidden *elsewhere* at warp. | Kicks charge the drive: warp jumps past light speed that coast back down. Mids glow the bubble wall; highs are the impacts on its front. |
+| **Penrose Diagram** | The conformal diagram of a charged, maximally extended black hole (Reissner–Nordström): time runs up, light at exactly 45°, infinity squeezed into finite edges, and it never ends — universe, black-hole interior, the regions beside the jagged timelike singularities, a white hole, a new universe, and again. A traveller follows a genuine timelike worldline through it (never flatter than 45°), exiting left or right into each new universe, with their light cone riding along; the view scrolls up with them forever. | Kicks fire light rays from the traveller along both sides of the light cone (they stop where they hit a singularity or infinity) and hurry them on; the horizons pulse. Each universe is a mid band and glows with it; highs crackle the singularities and spark along the horizons. |
 
 ## The band rule
 
@@ -139,7 +139,7 @@ in this folder, only to this machine. Nothing is recorded or sent anywhere.
 | Mouse drag | Grab a quark / drop a mass / attract the wavefunction |
 | Move the window | Shove the physics (Quark Soup, Starburst, Spacetime) |
 
-URL parameters: `?scene=quarks|spacetime|wavefunction|starburst|chamber|horizon|supernova|pulsar|aurora|ferrofluid|wormhole|doubleslit|galaxies|merger|comet|jupiter|lorenz|pendulum|plasma|tokamak|feynman|reaction|warp`, `?mute=1`.
+URL parameters: `?scene=quarks|spacetime|wavefunction|starburst|chamber|horizon|supernova|pulsar|aurora|ferrofluid|wormhole|doubleslit|galaxies|merger|comet|jupiter|lorenz|pendulum|plasma|tokamak|feynman|reaction|penrose`, `?mute=1`.
 
 ## Performance
 
@@ -185,7 +185,7 @@ js/scenes/plasma.js     Plasma Globe (polar filament curves)
 js/scenes/tokamak.js    Tokamak (raymarched coils + volumetric plasma)
 js/scenes/feynman.js    Feynman Diagrams (SDF line styles from uniform arrays)
 js/scenes/reaction.js   Reaction–Diffusion (Barkley model, ping-pong float targets)
-js/scenes/warp.js       Warp Drive (relativistic aberration + spacetime diagram)
+js/scenes/penrose.js    Penrose Diagram (analytic Reissner–Nordström tiling, worldline in JS)
 ```
 
 ### Adding a scene
