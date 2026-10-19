@@ -1,214 +1,201 @@
-# Quanta — a physics playground that listens to your desktop
+# Quanta Lab
 
-Quanta is a real-time audio visualizer built from scratch with WebGL2 and the Web Audio API. It
-runs in the browser on Windows, Linux and macOS. No installs, no frameworks, no network: on Windows
-double-click `Start-Quanta.cmd`, on Linux or macOS run `./start-quanta.sh`, and it opens in a
-browser app window, listening to whatever your computer is playing.
+A music visualizer where every scene is a small physics experiment. Quarks get yanked around by
+the kick drum, a black hole merger chirps along with the track, a ferrofluid puddle bristles on
+every bass hit. It runs in the browser (WebGL2 + Web Audio), has no dependencies, no build step,
+and doesn't talk to the network.
 
-Instead of the usual bar spectrum, every scene is a small physics simulation that the music drives:
+It started as "what if the bar spectrum was a Schrödinger equation" and got out of hand. There are
+23 experiments now.
 
-| Scene | What is going on | What the music does |
-| --- | --- | --- |
-| **Quark Soup** | A cartoon sandbox of colour-charged quarks (red / green / blue + anti-colours) bound into hadrons by gluon strings. Real QCD rules: quarks never roam free, and when a string stretches too far it snaps into a *new* quark–antiquark pair (string breaking). Crowded mesons annihilate into photon stars. | Beats pump energy into each hadron in proportion to its own frequency band; bass squeezes the bag the quarks live in; treble makes them jitter. Drag a quark with the mouse. Shake the window: the soup keeps its inertia in screen space (an homage to the gravity sandbox next door). |
-| **Spacetime Fabric** | A 3D sheet of spacetime bent by gravity wells: a central mass and six bodies on Keplerian orbits (angular speed ∝ r^-1.5). | The gravitational waves are the bass signal itself travelling outward at a fixed speed: the ring at a given radius carries the bass level from the moment it left the centre, so a kick is one ring, an 808 a band of rings and silence a flat sheet. The wells deepen a little with the bass. Bodies glow and size with the mids; treble sends glints along the grid. With no music it sits still (raise *Idle motion* for ambient drift). Press the mouse to drop your own mass. |
-| **Wavefunction** | A genuine 2D Schrödinger equation integrated on the GPU (Visscher leapfrog, hundreds of substeps per second). Brightness is \|ψ\|², colour is the phase, drawn with cel-shaded contours. | Beats fire quantum wave packets that have to tunnel through a crystalline ring barrier whose height follows the spectrum; bass opens a well in the middle; drag to attract the wave. |
-| **Starburst** | 20k–400k five-pointed stars simulated entirely on the GPU (transform feedback) with curl-noise flow, arranged on a thin hollow globe split into eight frequency wedges. | Each wedge bulges and glows with its slice of the mids, bass breathes the globe and kicks swell it outward, treble twinkles; moving the window throws the stars around. |
-| **Bubble Chamber** | A particle-detector photograph that paints itself: charged tracks curl in a magnetic field (radius ∝ momentum, opposite charges curl opposite ways), lose energy and spiral inward, neutrals decay into V-shaped pairs, delta electrons spin off, and the long exposure slowly fades. | Every significant kick is one collision at the centre, sized by the hit (a soft one a few tracks, a hard one a spray); the field strength follows the kick envelope; each track glows with its own mid band. *Idle spawn rate* adds background collisions from the edge (default 0: kicks only). Hold the mouse to create a magnetic anomaly. |
-| **Event Horizon** | A point-mass gravitational lens bends a sky of cartoon stars around a black hole with a hot accretion disk (Doppler beaming included). | Every star twinkles to its own frequency band, the disk is heated by the music, the horizon breathes with the bass, beats flare outward through the disk. |
-| **Supernova** | A massive star collapses and explodes: the shock front grows like a Sedov–Taylor blast wave (R ∝ t^0.4), breaks up into Rayleigh–Taylor fingers, bends the starlight behind it and leaves a fading remnant. | **Bass-led.** Every kick collapses the core (the star shrinks and goes white-hot) and launches one blast sized by the hit, and the camera recoils on a spring. Mids light the boiling surface and the ejecta filaments; highs throw sparks in the ejecta. |
-| **Pulsar** | A neutron star with its magnetic axis tilted against its spin axis, so two radio beams sweep the sky like a lighthouse; each pass over the line of sight is a pulse (a flash and an expanding radio ring). Dipole field lines and a pulsar-wind nebula surround it. | **Treble-led.** Every snare is a *glitch*: a sudden spin-up that magnetic braking bleeds off, so the star lurches round on each hit (with *Snares only* on, hi-hats just nudge it). Starquake cracks glow after a glitch; highs stream sparks along the beams and glints along the field lines. Mids brighten the beams and nebula. |
-| **Aurora** | Curtains of light over a mountain lake: a sharp lower edge, rays along the field lines, oxygen green fading to oxygen red, a nitrogen-violet fringe, mirrored in the water. | **Mid-led.** Each stretch of curtain is one mid band and rises and brightens with it; a mid onset sets off a substorm that spreads along the curtains. Highs make the rays flicker (pulsating aurora) and the stars twinkle; kicks send a sway through the curtains. |
-| **Ferrofluid** | A puddle of magnetic liquid over an electromagnet. Above a critical field it stands up in a hexagonal lattice of spikes (the Rosensweig instability) and heaps up over the magnet. Raymarched, shaded as black mirror-glossy liquid in a studio. | Kicks surge the coil current, so the spikes leap out across the puddle and relax. Mids set each spike's height around its field value and light the studio it reflects; highs flicker glints on the tips. Drag to move the magnet. |
-| **Wormhole** | An endless flight down a curving Einstein–Rosen throat ruled like spacetime, with light from the other universe at the far end. | Always flying forward; kicks hit the throttle, squeeze the throat and release a gravitational-wave ring that rushes past. Around each wall ring the mid spectrum runs once; highs streak star dust past the camera. |
-| **Double Slit** | Waves through two slits interfere; single photons land on the detector one by one (drawn from \|ψ\|²) and a long exposure builds the fringes from dots. The live \|ψ\|² curve sits beside the screen. | Every kick is a *which-way measurement*: detectors at the slits light up, the interference term vanishes, the wave behind the barrier splits in two and photons land in two plain bands, until the fringes return. The mid centroid sets the wavelength (fringe spacing and colour) and mids the wave brightness; highs fire bursts of photons. |
-| **Galaxy Collision** | Two spiral galaxies on a bound elliptical orbit fly through each other, Toomre-style: heavy cores plus 64k massless stars integrated on the GPU, so the passing core's tide tears out tails and bridges. A new pair replaces them after a couple of passages; the camera orbits. | Kicks fast-forward the encounter and flare the cores. Every star belongs to a mid band and glows with it; young blue stars sparkle with the highs. |
-| **Black Hole Merger** | Two black holes spiral in (separation follows Peters' a⁴ ∝ t law, so the orbit chirps), lens the stars behind them and radiate a two-armed gravitational-wave spiral; at contact a flash, a ring of radiation and a ringdown, then a new pair. A LIGO-style strain trace scrolls along the bottom. | Every kick bleeds orbital energy (the pair steps closer), so heavy music merges faster. Mids heat the gas around each hole; highs twinkle the stars and glint in the wave crests. |
-| **Comet** | We ride along a comet on an e = 0.75 Kepler orbit: the blue ion tail points straight away from the sun, the yellow dust tail curves back along the orbit, and both swing round through perihelion while the stars stream past. | Kicks are solar-wind gusts: a disconnection kink races down the ion tail and it flaps with the bass. Mids light the coma and dust; highs shed sparkling fragments down the dust tail. |
-| **Jupiter** | A low flight over the cloud deck toward the curved horizon. Bands stream along alternating jets (two-phase flow noise, so the clouds really flow), storms twist the clouds round them and drift with their band, Io crosses the sky. | Kicks spin up new storms ahead and nudge the flight. Each latitude is a mid band; highs fire lightning deep in the belts. |
-| **Lorenz Attractor** | Three tracers on Lorenz's chaotic system draw the butterfly as glowing ribbons; they start a hair apart and diverge (the butterfly effect), and are periodically dropped back together to do it again. The camera orbits. | Kicks push ρ up so the attractor swells and races. The ribbon is painted with the mids as it is drawn, a history of the music; high onsets nudge the tracers apart. |
-| **Pendulum Wave** | 24 pendulums tuned so the n-th swings K + n times per minute drift through travelling snakes, standing waves and apparent chaos and realign, with motion trails, from a slowly drifting camera. | Kicks swing them wider. The row is a spectrum: each bob glows with its own mid band. A high onset sends a ripple of light along the row. |
-| **Plasma Globe** | Filaments of ionised gas crawl from the electrode to the glass, fork near it and gather where you hold the mouse. | Each filament is a mid band. Kicks fire an arc burst that flares them and makes them jump; highs crackle along them and spark at the glass. |
-| **Tokamak** | An open-frame fusion reactor (16 D-shaped field coils, central solenoid, poloidal rings) with a D-shaped plasma ring whose helical field lines (pitch set by the safety factor q) flow round. Raymarched coils, volumetric plasma; the camera circles. | Every kick is an edge-localised mode: the plasma edge erupts in filaments toward the wall and the core crashes briefly. Mids set the temperature; highs flicker edge turbulence. |
-| **Feynman Diagrams** | Spacetime scrolls by (time runs left to right) and particle interactions are written onto it in Feynman's notation, each drawing itself in time order with a quantum riding every line. | Kicks write annihilations and exchanges and surge the scroll; mid onsets write emissions and vacuum-polarisation loops; highs pop virtual-pair bubbles. |
-| **Reaction–Diffusion** | A BZ-style excitable medium (Barkley's model) on the GPU: broken wave fronts curl into rotating spirals that turn and collide forever, in a petri dish the camera pans across. | Kicks drop catalyst (expanding rings) and scratch lines that birth spiral pairs. Mids raise excitability; highs spark tiny new sources. |
-| **Penrose Diagram** | The conformal diagram of a charged, maximally extended black hole (Reissner–Nordström): time runs up, light at exactly 45°, infinity squeezed into finite edges, and it never ends — universe, black-hole interior, the regions beside the jagged timelike singularities, a white hole, a new universe, and again. A traveller follows a genuine timelike worldline through it (never flatter than 45°), exiting left or right into each new universe, with their light cone riding along; the view scrolls up with them forever. | Kicks fire light rays from the traveller along both sides of the light cone (they stop where they hit a singularity or infinity) and hurry them on; the horizons pulse. Each universe is a mid band and glows with it; highs crackle the singularities and spark along the horizons. |
-
-## The band rule
-
-Every scene maps the spectrum the same way, so what you see always means the same thing:
-
-| Band | Drives | Examples |
-| --- | --- | --- |
-| **Bass** (32–150 Hz) | motion, shake, force | kicks that stretch the quark strings, the bag squeeze, gravitational-wave ripples, the breathing shell and horizon, the magnetic field, the global screen shake on kicks |
-| **Mids** (150–2200 Hz) | light and body | brightness, size and colour energy of the quarks, the orbiting bodies, the stars, the tracks, the wave packets and the accretion disk; the global bloom |
-| **Highs** (2200 Hz–16 kHz) | sparkle and detail | twinkle, jitter, photon stars, grid glints, delta electrons, ink shimmer, chromatic fringing and grain |
-
-The big visible bass response in every scene (horizon and disk size, globe radius, bag squeeze,
-spacetime depth and waves, magnetic field, the global zoom punch) uses a *kick envelope* that
-reacts to change, not level: the attack of each hit in the 35–100 Hz kick band (the gap between a
-fast and a slow envelope of the band's power in dB, so a kick riding on a loud bassline counts just
-like an isolated one and a gliding 808 doesn't read as repeated hits), measured against the
-*typical* recent attack rather than the strongest, with a ~3.5 dB noise floor, an instant attack
-and a short release. One note is one event: after a hit the detector stays disarmed until the
-band has dipped a few dB below that hit, so a long 808 fires once at its onset and then relaxes. *Kick threshold* (default 35%)
-sets how small a hit may be relative to a typical one before it is ignored, *Kick level gate*
-(default −46 dBFS) the minimum bass loudness below which nothing counts (quiet passages are mostly
-noise, which wobbles wildly in dB), and *Kick decay* how long a hit shows. A typical hit reads about 0.85, a hard one 1, and a sustained note counts only when
-it starts. Onsets are detected
-per band too: kick drums shake, mid onsets flash the bodies, treble onsets sparkle. The *Band
-response* section of the settings drawer has a drive slider for each band and for each of the
-three global couplings (shake, glow, sparkle), so you can push or mute any of them.
-
-## Effects and palettes
-
-Twenty-three scenes become hundreds of looks: the *Effects* section layers independent post effects, each
-with its own slider, all persisted:
-
-mirror (horizontal / vertical / quad) · kaleidoscope (3–12 segments) · fractal tiling · space
-bend (pinch ↔ bulge, pulses with kicks) · echo trails · rotation · cel shading & ink outlines ·
-halftone print · scanlines · chromatic aberration · negative flash on kicks · palette cycling
-(hue drift)
-
-`E` shuffles a tasteful random combination, `C` clears them, and *Auto-shuffle* reshuffles effects
-and palettes on a timer. Changes never snap: every effect glides to its new value over a second or
-two (mirror and kaleidoscope cross-fade in and out), and palettes blend. There are 14 hand-picked palettes plus a ✦ random palette generator
-(`R`) that builds a harmonious scheme every time you press it.
-
-Everything else is customizable from the same drawer (gear icon or `S`): sensitivity, intensity,
-bloom, grain, render scale, auto-cycling scenes, and per-scene parameters such as string
-toughness, gravity-well depth, grid resolution or particle count. Settings persist in the browser.
+<img src="logo.svg" width="96" alt="Quanta Lab logo">
 
 ## Running it
 
-### Windows
+**Windows:** double-click `Start-Quanta.cmd`. It starts a tiny local server in PowerShell and
+opens Edge in an app window.
 
-1. Double-click **`Start-Quanta.cmd`** (or run `serve.ps1` in PowerShell). A tiny localhost web
-   server starts (built into Windows PowerShell, nothing to install) and Edge opens an app window.
-2. Click **Desktop audio**. In the share dialog pick **Entire screen** and switch on
-   **Share system audio**, then **Share**. Quanta only reads the audio; the video track is disabled.
-   Edge shows a small "sharing your screen" bar which you can hide.
-3. Play music anywhere on your PC. Press `F` for fullscreen and `H` to hide the interface.
+**Linux / macOS:** run `./start-quanta.sh` (needs `python3`, which you almost certainly have).
+`--port 9000` and `--no-browser` do what they say.
 
-Other sources: **Microphone**, an **audio file** (or drop one on the window), or the built-in
-**demo track** (a small synthwave loop synthesized live) if you just want to look.
+**A server, behind Caddy:** see [Docker](#docker) below.
 
-### Linux (and macOS)
+Then pick an input:
 
-1. Run **`./start-quanta.sh`** from a terminal (options: `--port N`, `--no-browser`). It needs only
-   `python3`, which every mainstream distribution ships. A localhost server starts and Chrome,
-   Chromium, Edge or Brave opens in an app window (falling back to your default browser).
-2. Pick a source as above. Desktop audio on Linux depends on the browser:
-   - **Screen share with system audio.** The launcher starts the browser with PulseAudio /
-     PipeWire loopback enabled, so recent Chrome and Chromium offer *Share system audio* when you
-     pick *Entire screen*. This only applies if the browser was not already running when the
-     launcher opened it; close other browser windows first if the checkbox is missing.
-   - **Monitor source as a microphone** (works in every browser, Firefox included). Click
-     **Microphone**, then route the browser to your output's monitor: in `pavucontrol`, on the
-     *Recording* tab, switch the browser's stream to *Monitor of …*, or make the monitor the
-     default input before you click:
-     `pactl set-default-source "$(pactl get-default-sink).monitor"`.
-3. Press `Ctrl+C` in the terminal to stop the server.
+- **Desktop audio** captures whatever your computer is playing. In the share dialog choose
+  *Entire screen* and tick *Share system audio*. Only the audio is used; the video track is
+  switched off straight away.
+- **Microphone**, an **audio file** (or drag one onto the window), or the **test signal**, a little
+  synthwave loop generated live, if you just want to poke around.
 
-On macOS Chrome cannot capture system audio; use a loopback device (e.g. BlackHole) as the
-microphone, or share a single browser tab with its audio.
+`F` for fullscreen, `H` to hide the panels, and you have a screensaver.
 
-On Wayland, browsers do not report the window position, so *move the window* physics stay idle;
-everything else is the same.
+### Desktop audio on Linux and macOS
 
-Closing the browser window and the console window stops everything. The server only serves the files
-in this folder, only to this machine. Nothing is recorded or sent anywhere.
+Browsers only offer "share system audio" reliably on Windows. On Linux the launcher starts Chrome
+with PulseAudio/PipeWire loopback switched on, which usually works, but only if Chrome wasn't
+already running. If the checkbox is missing, the dependable route is to use your output's
+*monitor* as a microphone: click **Microphone**, then in `pavucontrol` → *Recording* point the
+browser at "Monitor of …", or make it the default input first:
 
-> `index.html` can also be opened directly, but browsers are stricter about capture permissions on
-> `file://` pages, so the launcher is the supported route.
+```bash
+pactl set-default-source "$(pactl get-default-sink).monitor"
+```
+
+On macOS you need a loopback device (BlackHole is free) selected as the microphone. Or share a
+single browser tab, which does carry audio.
+
+## The experiments
+
+Every scene follows the same rule so you can read it without a legend: **bass moves things**,
+**mids light them up**, **highs add sparkle**.
+
+**Quantum stuff**
+- *Quark Soup*: colour-charged quarks bound by gluon strings that snap into new pairs when
+  stretched too far (string breaking). Drag a quark. Shake the browser window and the soup sloshes.
+- *Wavefunction*: an actual 2D Schrödinger equation on the GPU. Kicks fire wave packets at a ring
+  barrier that they partly tunnel through.
+- *Bubble Chamber*: each kick is a collision; charged tracks curl in the field, neutrals decay
+  into V's, and the photograph fades like a long exposure.
+- *Double Slit*: photons land one at a time and slowly build the interference fringes. Every kick
+  is a which-way measurement, and the fringes collapse until it passes.
+- *Feynman Diagrams*: spacetime scrolls by and the music writes particle interactions onto it.
+
+**Space**
+- *Spacetime Fabric*: a grid bent by orbiting masses; the gravitational waves are the bass itself.
+- *Starburst*: a few hundred thousand stars on a globe split into frequency wedges.
+- *Event Horizon*: a lensed starfield and an accretion disk that stretches on kicks.
+- *Supernova*: every kick collapses the core and blows the star apart; the camera takes the hit.
+- *Pulsar*: snares are "glitches" that spin the neutron star up; magnetic braking slows it again.
+- *Galaxy Collision*: two spirals tear tidal tails out of each other (about 64k stars on the GPU).
+- *Black Hole Merger*: a minute-long loop. A lone hole, a companion falls in, they spiral together
+  and chirp (watch the strain trace at the bottom), merge, and the remnant wears a spectrum corona
+  until the next one arrives.
+- *Comet*: ride along through perihelion; kicks are solar-wind gusts that kink the ion tail.
+- *Jupiter*: a low flight over the cloud bands; kicks spin up storms, highs are lightning.
+- *Wormhole*: an endless tunnel that surges on kicks.
+- *Penrose Diagram*: the conformal diagram of a charged black hole, which goes on forever:
+  universe, black hole, singularity, white hole, a new universe, again. A traveller follows a real
+  timelike worldline through it, and each kick fires light rays along their light cone.
+
+**Matter, fluids, fields**
+- *Aurora*: curtains over a mountain lake; each fold is a mid band. Mid hits trigger substorms.
+- *Ferrofluid*: a magnetic puddle that grows spikes when the coil (bass) surges. Drag the magnet.
+- *Reaction–Diffusion*: BZ-style spiral waves in a petri dish; kicks scratch new spirals into being.
+- *Plasma Globe*: plasma strings from the electrode to the glass; they writhe faster with the bass.
+  Hold the mouse on the glass.
+- *Tokamak*: a fusion plasma in its coils; every kick is an edge-localised mode erupting outward.
+
+**Odd ones**
+- *Lorenz Attractor*: three chaotic tracers that start a hair apart and don't stay that way.
+- *Pendulum Wave*: 24 tuned pendulums drifting in and out of step; each bob is a mid band.
+
+Each experiment has its own knobs at the bottom of the setup window.
 
 ## Controls
 
-| Key | Action |
+| Key | Does |
 | --- | --- |
-| `Space` / `→` / `←` | Next / previous scene |
-| `1`–`9`, `0` (+`Shift` for 11–20, +`Alt` for 21–23) | Pick a scene directly |
-| `P` / `Shift+P` | Next / previous palette |
-| `R` | New random palette |
-| `E` / `C` | Shuffle effects / clear effects |
-| `X` | Toggle auto-shuffle of effects and palettes |
-| `S` / `Esc` | Open / close settings |
-| `A` | Toggle auto-cycling scenes |
-| `F` or double-click | Fullscreen |
-| `H` | Hide / show the interface |
-| `M` | Mute playback of file / demo sources |
-| Mouse drag | Grab a quark / drop a mass / attract the wavefunction |
-| Move the window | Shove the physics (Quark Soup, Starburst, Spacetime) |
+| `Space` / `→` / `←` | next / previous experiment |
+| `1`–`9`, `0` | experiment 1–10 (`Shift` adds 10, `Alt` adds 20) |
+| `P` / `Shift+P` | next / previous palette |
+| `R` | invent a palette (there's no undo) |
+| `E` / `C` | shuffle effects / clear them |
+| `X` | auto-shuffle effects and palettes |
+| `A` | auto-cycle experiments |
+| `S` / `Esc` | setup window |
+| `F` or double-click | fullscreen |
+| `H` | hide everything |
+| `M` | mute file / test-signal playback |
 
-URL parameters: `?scene=quarks|spacetime|wavefunction|starburst|chamber|horizon|supernova|pulsar|aurora|ferrofluid|wormhole|doubleslit|galaxies|merger|comet|jupiter|lorenz|pendulum|plasma|tokamak|feynman|reaction|penrose`, `?mute=1`.
+URL parameters: `?scene=<id>` (`quarks`, `supernova`, `penrose`, … the ids are in each
+`js/scenes/*.js`) and `?mute=1`.
+
+## Effects and palettes
+
+The setup window stacks post effects on top of any scene: mirror, kaleidoscope, fractal tiling,
+space bend, echo trails, rotation, cel shading with ink, halftone, scanlines, chromatic
+aberration, a negative flash on kicks and hue drift. They glide in and out instead of snapping.
+There are 14 palettes I picked by hand and a random one (`R`) that's right more often than
+you'd expect.
+
+## How the kick detection works
+
+This took longer than any of the scenes, so it gets a section.
+
+A naive "bass is loud" trigger fires constantly on modern music, because the bassline is loud
+all the time. Quanta looks at the *attack* instead: in the 35–100 Hz band it compares a fast and a
+slow envelope of the band's power in dB, so a kick on top of a big bassline still registers as a
+jump. That jump is measured against the *typical* recent jump, not the loudest one, so one huge
+hit doesn't make every following kick look small. After a hit the detector disarms until the band
+dips a few dB, so a long 808 is one event, not twelve. Below about −46 dBFS nothing counts at
+all, because in quiet passages the noise floor wobbles by tens of dB and reads as phantom kicks.
+
+All of that is tunable under *Band response* in the setup window (threshold, level gate, decay),
+alongside a drive slider per band.
+
+## Docker
+
+The container is plain nginx serving the static files on port 8080. Build and run it with
+compose:
+
+```bash
+docker compose up -d --build
+```
+
+That publishes it on `127.0.0.1:8477` only, so a Caddy on the same host can front it:
+
+```
+quanta.example.com {
+	reverse_proxy 127.0.0.1:8477
+}
+```
+
+There's a copy of that in `deploy/Caddyfile`. If Caddy itself runs in Docker, put both on one
+network and use `reverse_proxy quanta:8080` instead (the compose file has a commented example).
+
+**It has to be served over HTTPS** (or from localhost). Browsers only allow microphone and
+screen-audio capture in a secure context, which Caddy gives you for free. Over plain http from
+another machine, the file and test-signal inputs still work and the capture buttons won't.
 
 ## Performance
 
-Designed for 144 Hz. The audio analysis is a few thousand operations per frame (128 log-spaced bands
-from a 2048-point FFT, onset detection by spectral flux, tempo by autocorrelation), the heavy
-lifting happens on the GPU, and post-processing is a six-level progressive bloom, the effects
-stack and ACES tone mapping. On start Quanta measures the display's refresh rate; with **Adaptive quality** on it
-lowers the internal render scale when frames exceed the budget and raises it again when there is
-headroom. The frame counter at the bottom right shows achieved / target fps and the current
-resolution.
+Built for 144 Hz on a desktop GPU. It measures your refresh rate on start, and with *Adaptive
+quality* on it lowers the render resolution when frames run long and raises it again when there's
+headroom. The readout bottom right shows achieved / target fps and the resolution. The heavy ones
+are Tokamak, Ferrofluid and Galaxy Collision; Wavefunction and Starburst have their own size knobs.
 
-## Project layout
+## Known quirks
+
+- Firefox can't capture system audio at all. Use Chrome or Edge, or the monitor-as-microphone trick.
+- On Wayland the browser doesn't report the window position, so the "shake the window" physics
+  in Quark Soup, Starburst and Spacetime do nothing.
+- The bpm readout guesses from the kicks. It's usually right.
+- Opening `index.html` straight from disk mostly works, but browsers are stricter about capture
+  on `file://` pages, so use one of the launchers.
+
+## Layout
 
 ```
-Start-Quanta.cmd        Windows double-click launcher (calls serve.ps1)
-serve.ps1               Windows localhost static server (HttpListener) + opens Edge in app mode
-start-quanta.sh         Linux / macOS launcher: python3 localhost server + Chromium app window
-index.html              page shell, start screen, HUD, settings drawer
-css/style.css
-js/gl.js                WebGL2 toolkit: programs, render targets, mat4, shared GLSL snippets
-js/audio.js             capture (desktop / mic / file / demo synth) + analysis
-js/post.js              bloom, the layered effects stack, band couplings, tonemap, vignette, grain
-js/main.js              app: scene registry, settings, UI, render loop, adaptive quality
-js/scenes/quarks.js     Quark Soup (CPU physics, instanced SDF sprites)
-js/scenes/spacetime.js  Spacetime Fabric (displaced grid mesh)
-js/scenes/wavefunction.js  Schrödinger simulation (ping-pong float targets)
-js/scenes/starburst.js  GPU particles (transform feedback)
-js/scenes/chamber.js    Bubble Chamber (CPU tracks, long-exposure accumulation buffer)
-js/scenes/horizon.js    Event Horizon (single fragment shader)
-js/scenes/supernova.js  Supernova (single fragment shader, kick-triggered blasts)
-js/scenes/pulsar.js     Pulsar (single fragment shader, spin integrated in JS)
-js/scenes/aurora.js     Aurora (single fragment shader)
-js/scenes/ferrofluid.js Ferrofluid (raymarched heightfield)
-js/scenes/wormhole.js   Wormhole (polar tunnel mapping)
-js/scenes/doubleslit.js Double Slit (analytic waves + photon exposure buffer)
-js/scenes/galaxies.js   Galaxy Collision (transform-feedback N-body stars)
-js/scenes/merger.js     Black Hole Merger (single fragment shader, inspiral in JS)
-js/scenes/comet.js      Comet (single fragment shader, Kepler orbit in JS)
-js/scenes/jupiter.js    Jupiter (ray-sphere flyover, two-phase flow noise)
-js/scenes/lorenz.js     Lorenz Attractor (RK4 in JS, instanced ribbons)
-js/scenes/pendulum.js   Pendulum Wave (projected in JS, float data texture)
-js/scenes/plasma.js     Plasma Globe (polar filament curves)
-js/scenes/tokamak.js    Tokamak (raymarched coils + volumetric plasma)
-js/scenes/feynman.js    Feynman Diagrams (SDF line styles from uniform arrays)
-js/scenes/reaction.js   Reaction–Diffusion (Barkley model, ping-pong float targets)
-js/scenes/penrose.js    Penrose Diagram (analytic Reissner–Nordström tiling, worldline in JS)
+index.html, css/style.css      the start dialog, readouts and setup window
+logo.svg, favicon.svg
+js/gl.js                       tiny WebGL2 toolkit + shared GLSL (noise, palette, band lookups)
+js/audio.js                    capture, analysis, kick/onset detection, the test-signal synth
+js/post.js                     bloom, the effects stack, tonemapping
+js/main.js                     scene registry, settings, UI, render loop, adaptive quality
+js/scenes/*.js                 one file per experiment
+Start-Quanta.cmd, serve.ps1    Windows launcher
+start-quanta.sh                Linux / macOS launcher
+Dockerfile, deploy/            container + nginx and Caddy configs
 ```
 
-### Adding a scene
+### Adding an experiment
 
-Create `js/scenes/myscene.js`, register it with `VIZ.registerScene({ id, name, blurb, params, create })`
-and add a `<script>` tag to `index.html`. A scene instance implements `resize(w, h)`,
-`render(target, audio, u)` and `dispose()`; the full contract, including what `audio` and `u`
-provide (bands, bass/mid/high, per-band onsets, palette, window motion, pointer), is documented at
-the top of `js/main.js`, together with the band rule every scene must follow. `js/scenes/horizon.js`
-is the smallest example. To fire one event per kick (as Supernova and Wormhole do), use
-`new VIZ.KickTrigger()` and call `update(audio.kick)` each frame: it returns the hit's peak on the frame it tops out. In GLSL use `bandLow(x)` / `bandMid(x)` / `bandHigh(x)`, the hit
-envelopes `uKick` / `uMidHit` / `uHighHit` and the sharp onsets `uPulse` / `uMidPulse` /
-`uHighPulse`; in JS `audio.kick`, `audio.bandMid(x)` etc. Rule of thumb: the scene's largest
-visible change must be driven by `uKick`.
+Make `js/scenes/yours.js`, call `VIZ.registerScene({ id, name, blurb, params, create })`, add a
+`<script>` tag in `index.html`. A scene implements `resize(w, h)`, `render(target, audio, u)` and
+`dispose()`. The full contract, including everything `audio` and `u` hand you, is the comment at
+the top of `js/main.js`. `js/scenes/horizon.js` is the shortest example. To fire something once
+per kick, `new VIZ.KickTrigger()` and call `update(audio.kick)` every frame; it returns the hit's
+strength on the frame the kick peaks.
 
-## Troubleshooting
-
-- **"No sound is arriving"** — you probably shared a window or a tab without audio. Click *change*
-  next to the source name and re-share *Entire screen* with *Share system audio* on.
-- **Share dialog has no audio checkbox on Linux** — see the Linux section above: close all
-  browser windows and relaunch with `./start-quanta.sh`, or use the monitor source as a microphone.
-- **Share dialog has no audio checkbox** — use Microsoft Edge or Google Chrome; Firefox cannot
-  capture system audio.
-- **Black screen / "can't start"** — the browser has no WebGL2 (hardware acceleration disabled?).
-- **Choppy** — lower *Render scale* in settings or turn *Adaptive quality* on; the Wavefunction
-  grid and Starburst particle count are the two heaviest knobs.
+The one rule worth keeping: make the scene's biggest visible change follow `uKick`.

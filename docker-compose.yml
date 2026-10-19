@@ -1,0 +1,20 @@
+services:
+  quanta:
+    build: .
+    image: quanta-lab:latest
+    container_name: quanta
+    restart: unless-stopped
+    # Only on the loopback interface: Caddy on the same host proxies to it.
+    ports:
+      - "127.0.0.1:8477:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    # If Caddy runs in Docker as well, drop `ports`, join its network instead and use
+    # `reverse_proxy quanta:8080` in the Caddyfile:
+    # networks:
+    #   - caddy
+
+# networks:
+#   caddy:
+#     external: true

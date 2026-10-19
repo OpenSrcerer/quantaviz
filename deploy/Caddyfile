@@ -1,0 +1,6 @@
+# Caddy on the host, the container published on 127.0.0.1:8477 (see docker-compose.yml).
+# Caddy fetches the certificate; HTTPS is what lets the browser capture audio.
+quanta.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8477
+}

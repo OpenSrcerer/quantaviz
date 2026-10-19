@@ -139,6 +139,27 @@
     sceneParams: {},
   };
   const STORAGE_KEY = 'quanta.settings.v2';
+  const TAGLINES = [
+    'Feed it sound. It does physics.',
+    'Sound in, physics out.',
+    'A bench full of experiments that listen.',
+    'Twenty-three experiments, one audio cable.',
+    'Turn it up. The equations like it loud.',
+  ];
+  const TIPS = [
+    'Space skips to the next experiment; the arrow keys go both ways.',
+    'Press E a few times. Some effect combinations are ugly. Some are great.',
+    'R invents a new palette. There is no undo, so screenshot the good ones.',
+    'In Ferrofluid you can drag the magnet around under the plate.',
+    'Hold the mouse on the plasma globe and the filaments come to you.',
+    'Quiet music firing phantom kicks? Raise the kick level gate in Setup.',
+    'Adaptive quality lowers the resolution before it ever drops frames.',
+    'H hides the panels and F goes fullscreen. Together: a decent screensaver.',
+    'Every experiment has its own knobs under Setup, at the bottom.',
+    'In Double Slit every kick is a measurement. Watch the fringes collapse.',
+    'The bpm readout is a guess from the kicks. Usually right. Usually.',
+    'Nothing you play here leaves your computer. There is no server to send it to.',
+  ];
   const GENERAL_SLIDERS = {
     generalAudio: [
       { key: 'sensitivity', label: 'Sensitivity', min: 0.3, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
@@ -310,7 +331,7 @@
 
     fatal(msg) {
       const hero = $('#hero');
-      hero.innerHTML = `<div class="hero-card"><h1 style="margin:0 0 10px;font-size:22px">Quanta can't start</h1><p class="hint">${msg}</p></div>`;
+      hero.innerHTML = `<div class="window hero-win"><div class="titlebar"><span>Quanta Lab</span></div><div class="win-body"><p class="err-head">The instrument could not start.</p><p class="hint">${msg}</p></div><div class="statusbar"><span>Halted</span></div></div>`;
     }
 
     /* ---------------- settings ---------------- */
@@ -434,6 +455,15 @@
     /* ---------------- UI ---------------- */
     buildUI() {
       const s = this.settings;
+      // A different tagline and tip of the day on every visit.
+      const pick = (a) => a[Math.floor(Math.random() * a.length)];
+      $('#tagline').textContent = pick(TAGLINES);
+      let tip = Math.floor(Math.random() * TIPS.length);
+      $('#tipText').textContent = TIPS[tip];
+      $('#statusCount').textContent = VIZ.scenes.length + ' experiments loaded';
+      const sticker = document.querySelector('.sticker');
+      if (sticker) sticker.style.transform = `rotate(${(-1 - Math.random() * 3.5).toFixed(1)}deg)`;   // stuck on by hand
+      $('#btnTip').addEventListener('click', () => { tip = (tip + 1) % TIPS.length; $('#tipText').textContent = TIPS[tip]; });
       document.querySelectorAll('.src').forEach((b) => b.addEventListener('click', () => this.selectSource(b.dataset.src)));
       $('#btnSource').addEventListener('click', () => this.showHero());
       $('#fileInput').addEventListener('change', (e) => {
@@ -708,6 +738,8 @@
         if (alt) { this.settings.scene = alt.id; return this.instantiate(alt); }
       }
       $('#sceneName').textContent = def.name;
+      const si = VIZ.scenes.indexOf(def) + 1;
+      $('#sceneIndex').textContent = String(si).padStart(2, '0') + '/' + String(VIZ.scenes.length).padStart(2, '0');
       $('#sceneBlurb').textContent = def.blurb || '';
       this.blurbTimer = 6;
       this.buildSceneParams();

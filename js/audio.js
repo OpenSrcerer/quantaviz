@@ -500,7 +500,7 @@
       this.node = this.demo.output;
       this.demo.start();
       this.sourceType = 'demo';
-      this.sourceLabel = 'Demo track';
+      this.sourceLabel = 'Test signal';
       this.active = true;
       this.silentFor = 0;
       this.emit('source', { type: 'demo', label: this.sourceLabel });
