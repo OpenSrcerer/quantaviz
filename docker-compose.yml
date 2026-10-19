@@ -1,7 +1,9 @@
 services:
   quanta:
+    # CI publishes this on every push to master; `docker compose up -d` pulls it.
+    # `docker compose up -d --build` builds from this checkout instead.
+    image: ghcr.io/opensrcerer/quantaviz:latest
     build: .
-    image: quanta-lab:latest
     container_name: quanta
     restart: unless-stopped
     # Only on the loopback interface: Caddy on the same host proxies to it.

@@ -136,12 +136,15 @@ alongside a drive slider per band.
 
 ## Docker
 
-The container is plain nginx serving the static files on port 8080. Build and run it with
-compose:
+The container is plain nginx serving the static files on port 8080. Every push to `master`
+runs CI, which builds it and publishes `ghcr.io/opensrcerer/quantaviz` (tagged `latest` and with
+the commit sha) after checking that the pushed image actually serves the app. So on the server:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
+
+pulls the published image, and `docker compose up -d --build` builds from your checkout instead.
 
 That publishes it on `127.0.0.1:8477` only, so a Caddy on the same host can front it:
 
