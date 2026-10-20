@@ -93,9 +93,10 @@ Every scene follows the same rule so you can read it without a legend: **bass mo
 - *Tokamak*: a fusion plasma in its coils; every kick is an edge-localised mode erupting outward.
 
 **Lab instruments**
-- *Oscilloscope*: a three-channel scope on a phosphor screen. The audio is split into lows,
-  mids and highs, each drawn by its own slow beam in its own colour and restarted by its own
-  band's hits: XY figures side by side, or three stacked sweeps.
+- *Oscilloscope*: a three-channel scope on a slow timebase. The audio is split into lows, mids
+  and highs, and the three beams roll across the screen together like a patient monitor, each
+  drawing its band's envelope (kicks swell the green lane), with an erase bar running just ahead.
+  There's an XY mode too.
 - *Seismograph*: a three-pen helicorder drum. Black ink writes quakes on the kicks (P-wave, then
   S-wave, then the big surface waves), red writes volcanic tremor in the mids, blue writes
   micro-quake spikes on the highs.

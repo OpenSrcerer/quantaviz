@@ -17,10 +17,15 @@
   const VIZ = window.VIZ;
   const W = 1024, ROWS = 14;
   const DRUM_R = 1.0, DRUM_L = 3.0;          // drum radius, half length
-  const ROW_H = (2 * DRUM_L - 0.4) / ROWS;   // axial height of one row (three lanes)
-  const X0 = -DRUM_L + 0.2;
   const LANES = [-0.31, 0.0, 0.31];          // lane centres within a row, in rows
   const AMP = 0.135;                         // lane amplitude, in rows (pens clip beyond this)
+  // The helix advances one row per turn, so over the drum's ROWS turns the pens travel ROWS + 1
+  // row heights, plus the outer lanes' reach either side. Size the rows so all of that fits on
+  // the paper (between the metal end bands).
+  const PAPER = DRUM_L - 0.14;                         // paper half-width
+  const REACH = Math.abs(LANES[2]) + AMP;              // outer lane + full swing, in rows
+  const ROW_H = (2 * PAPER) / (ROWS + 1 + 2 * (REACH - 0.5));
+  const X0 = -PAPER - (0.5 - REACH) * ROW_H;           // so the first row's lowest swing touches the paper's edge
   const PEN_ANGLE = 0.95;                    // where the pens touch the drum (radians from the top, toward the viewer)
 
   const FS = `#version 300 es
@@ -275,8 +280,10 @@ void main() {
       const rot = this.turns * Math.PI * 2;
 
       // Camera: in front of and above the pens, panning along the drum with them.
-      if (this.camX === null) this.camX = rowX;
-      this.camX += (rowX - this.camX) * (1 - Math.exp(-dt / 2.5));
+      // The camera follows the pens but never past the drum's ends.
+      const camGoal = Math.max(-DRUM_L + 0.6, Math.min(DRUM_L - 0.35, rowX));
+      if (this.camX === null) this.camX = camGoal;
+      this.camX += (camGoal - this.camX) * (1 - Math.exp(-dt / 2.5));
       const sway = 0.25 * Math.sin(u.time * 0.05);
       const eye = [this.camX + 0.8 + sway, 1.3 * P.distance, 2.75 * P.distance];
       const look = [this.camX - 0.1, 0.35, 0.85];
