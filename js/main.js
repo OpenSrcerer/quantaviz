@@ -146,7 +146,7 @@
     'Feed it sound. It does physics.',
     'Sound in, physics out.',
     'A bench full of experiments that listen.',
-    'Twenty-three experiments, one audio cable.',
+    'One audio cable, a whole bench of experiments.',
     'Turn it up. The equations like it loud.',
   ];
   const TIPS = [

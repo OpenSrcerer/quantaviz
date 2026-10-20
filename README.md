@@ -6,7 +6,7 @@ every bass hit. It runs in the browser (WebGL2 + Web Audio), has no dependencies
 and doesn't talk to the network.
 
 It started as "what if the bar spectrum was a Schrödinger equation" and got out of hand. There are
-23 experiments now.
+28 experiments now.
 
 > **Photosensitivity warning:** Quanta flashes, strobes and changes colour fast. It can trigger
 > seizures in people with photosensitive epilepsy. If that's you or anyone watching, don't use it.
@@ -80,6 +80,9 @@ Every scene follows the same rule so you can read it without a legend: **bass mo
 - *Penrose Diagram*: the conformal diagram of a charged black hole, which goes on forever:
   universe, black hole, singularity, white hole, a new universe, again. A traveller follows a real
   timelike worldline through it, and each kick fires light rays along their light cone.
+- *Meteor Shower*: streaks fan out from the radiant while the sky wheels overhead. Highs are
+  faint quick meteors; every kick is a fireball that flares, breaks up and leaves a glowing
+  train the wind slowly twists.
 
 **Matter, fluids, fields**
 - *Aurora*: curtains over a mountain lake; each fold is a mid band. Mid hits trigger substorms.
@@ -88,6 +91,18 @@ Every scene follows the same rule so you can read it without a legend: **bass mo
 - *Plasma Globe*: plasma strings from the electrode to the glass; they writhe faster with the bass.
   Hold the mouse on the glass.
 - *Tokamak*: a fusion plasma in its coils; every kick is an edge-localised mode erupting outward.
+
+**Lab instruments**
+- *Oscilloscope*: the waveform itself on a green phosphor screen, either plotted against a delayed
+  copy of itself (XY, which turns chords into Lissajous knots) or as a triggered sweep. Like a
+  real tube, the beam is brightest where it moves slowly.
+- *Seismograph*: a helicorder drum inking the ground. Every kick is a quake and arrives the way
+  real ones do: the small P-wave, then the S-wave, then the big surface waves.
+- *Schlieren Camera*: the optical trick that shows air itself. A real 2D wave simulation: the
+  speaker pushes pressure rings across the field on kicks, past a candle's heat plume.
+- *Cyclotron*: particles spiral out between the copper dees, pushed at every gap crossing by an
+  RF voltage that follows the bass, then shoot down the beam pipe onto a target. The gauge
+  reads the beam energy.
 
 **Odd ones**
 - *Lorenz Attractor*: three chaotic tracers that start a hair apart and don't stay that way.
