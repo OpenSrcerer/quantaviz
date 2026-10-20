@@ -15,7 +15,8 @@
 (function () {
   'use strict';
   const VIZ = window.VIZ;
-  const W = 1024, ROWS = 14;
+  const W = 4096, ROWS = 14;                 // ~290 samples a second: smooth even for the 14 Hz spikes
+  const PEN_TAU = [0.012, 0.008, 0.005];     // pen inertia per lane (s): the arms can't jump instantly
   const DRUM_R = 1.0, DRUM_L = 3.0;          // drum radius, half length
   const LANES = [-0.31, 0.0, 0.31];          // lane centres within a row, in rows
   const AMP = 0.135;                         // lane amplitude, in rows (pens clip beyond this)
@@ -158,6 +159,7 @@ void main() {
       this.tips = new Float32Array(6);
       this.bases = new Float32Array(6);
       this.cur = [0, 0, 0];
+      this.pen = [0, 0, 0];
       this._prefill();
     }
 
@@ -167,7 +169,7 @@ void main() {
       let lo = 0;
       for (const q of this.quakes) {
         const tau = t - q.t0;
-        if (tau < 0) continue;
+        if (tau < 0 || tau > 14) continue;
         const a = q.amp * P.magnitude;
         lo += a * 0.28 * Math.exp(-tau / 0.7) * Math.sin(2 * Math.PI * 7.5 * tau + q.ph) * Math.min(1, tau / 0.05);
         const ts = tau - 0.9 * q.dist;
@@ -181,7 +183,7 @@ void main() {
       let mi = 0.18 * A.mid * Math.sin(t * 2 * Math.PI * 4.2) * (0.7 + 0.3 * Math.sin(t * 1.3));
       for (const q of this.tremors) {
         const tau = t - q.t0;
-        if (tau < 0) continue;
+        if (tau < 0 || tau > 5) continue;
         mi += q.amp * Math.sin(2 * Math.PI * q.f * tau + q.ph) * Math.min(1, tau / 0.12) * Math.exp(-tau / 0.9);
       }
       this.noise[1] += (Math.random() - 0.5) * 0.3 - this.noise[1] * 0.1;
@@ -190,13 +192,21 @@ void main() {
       let hi = 0;
       for (const q of this.spikes) {
         const tau = t - q.t0;
-        if (tau < 0) continue;
+        if (tau < 0 || tau > 0.8) continue;
         hi += q.amp * Math.sin(2 * Math.PI * 14 * tau + q.ph) * Math.exp(-tau / 0.09);
       }
       hi = hi * P.spikes + (Math.random() - 0.5) * (0.02 + 0.22 * A.high) * P.jitter;
       out[0] = softClip(Math.max(-1.2, Math.min(1.2, lo)));
       out[1] = softClip(Math.max(-1.2, Math.min(1.2, mi)));
       out[2] = softClip(Math.max(-1.2, Math.min(1.2, hi)));
+    }
+
+    /** Move each pen toward its signal with a little inertia (sampleDt seconds per sample). */
+    _pen(v, sampleDt) {
+      for (let k = 0; k < 3; k++) {
+        this.pen[k] += (v[k] - this.pen[k]) * (1 - Math.exp(-sampleDt / PEN_TAU[k]));
+        v[k] = this.pen[k];
+      }
     }
 
     _write(row, s, v) {
@@ -221,6 +231,7 @@ void main() {
       const v = [0, 0, 0];
       for (let i = 0; i < turnsBack * W; i++) {
         this._signal(this.t + (i / W) * period, quiet, P, v);
+        this._pen(v, period / W);
         this._write(Math.floor(i / W) % ROWS, i % W, v);
       }
       this.turns = turnsBack;
@@ -263,6 +274,7 @@ void main() {
           this.data.fill(0, row * W * 4, (row + 1) * W * 4);
         }
         this._signal(t0 + (i - i0) / Math.max(1, i1 - i0) * dt, audio, P, v);
+        this._pen(v, period / W);
         this._write(row, i % W, v);
         this.dirtyRows.add(row);
       }
