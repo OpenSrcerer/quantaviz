@@ -18,7 +18,7 @@
   const ROW_H = (2 * DRUM_L - 0.4) / ROWS;   // axial height of one row
   const X0 = -DRUM_L + 0.2;
   const AMP = 0.42;                          // trace amplitude, in rows
-  const PEN_ANGLE = 0.35;                    // where the pen touches the drum (radians above the front)
+  const PEN_ANGLE = 0.95;                    // where the pen touches the drum (radians from the top, toward the viewer)
 
   const FS = `#version 300 es
 precision highp float;
@@ -79,7 +79,8 @@ void main() {
       } else {
         // Paper coordinates: around the drum (one turn = 0..1) and along it.
         float ang = atan(hp.z, hp.y);                 // 0 at the top, increasing toward the viewer
-        float aPaper = fract((ang + uRot) / TAU);
+        // The drum turns so freshly inked paper rolls down the front, toward the viewer.
+        float aPaper = fract((uRot - ang) / TAU);
         float rowCoord = (hp.x - X0) / ROW_H - aPaper; // the trace is a helix: one row per turn
         float row = floor(rowCoord);
         float local = fract(rowCoord) - 0.5;
@@ -240,15 +241,15 @@ void main() {
       const penX = X0 + (this.row + frac + 0.5) * ROW_H;
       const curV = this.data[(this.row * W + (i1 % W)) * 4] / 255 * 2 - 1;
       const penXv = penX + curV * AMP * ROW_H;
-      // The drum turns so the freshly inked paper moves away from the pen, over the top.
+      // The drum turns so the freshly inked paper rolls down from the pen into view.
       const rot = this.turns * Math.PI * 2;
 
       // Camera: in front of and above the pen, panning along the drum with it.
       if (this.camX === null) this.camX = penX;
       this.camX += (penX - this.camX) * (1 - Math.exp(-dt / 2.5));
       const sway = 0.25 * Math.sin(u.time * 0.05);
-      const eye = [this.camX + 0.8 + sway, 1.45 * P.distance, 2.5 * P.distance];
-      const look = [this.camX - 0.15, 0.45, 0.75];
+      const eye = [this.camX + 0.8 + sway, 1.3 * P.distance, 2.75 * P.distance];
+      const look = [this.camX - 0.1, 0.35, 0.85];
       const f = norm([look[0] - eye[0], look[1] - eye[1], look[2] - eye[2]]);
       const r = norm(cross(f, [0, 1, 0]));
       const up = cross(r, f);
@@ -258,14 +259,14 @@ void main() {
         return [(d[0] * r[0] + d[1] * r[1] + d[2] * r[2]) * 1.4 / z, (d[0] * up[0] + d[1] * up[1] + d[2] * up[2]) * 1.4 / z];
       };
       const tipW = [penXv, DRUM_R * Math.cos(PEN_ANGLE), DRUM_R * Math.sin(PEN_ANGLE)];
-      const baseW = [penX + 0.15, 1.75, 0.95];
+      const baseW = [penX + 0.3, 1.85, 0.95];   // the pen arm hangs from a holder above the drum
       const tip = project(tipW), base = project(baseW);
 
       const p = this.prog.use();
       this.ctx.setCommon(p, audio, u);
       p.tex('uTrace', this.tex)
         .f3('uEye', ...eye).f3('uFwd', ...f).f3('uRight', ...r).f3('uUp', ...up)
-        .f('uRot', rot - PEN_ANGLE)
+        .f('uRot', rot + PEN_ANGLE)
         .f2('uPenTip', tip[0], tip[1]).f2('uPenBase', base[0], base[1])
         .f('uCurRow', this.row);
       this.ctx.drawQuad();

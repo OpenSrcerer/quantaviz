@@ -107,7 +107,7 @@ void main() {
   vec2 auv = vec2(p.x / ${AX.toFixed(2)}, p.y / ${AY.toFixed(2)}) * 0.5 + 0.5;
   vec3 tr = texture(uAcc, auv).rgb;
   vec3 beamCol = mix(palette(0.95), vec3(0.75, 0.9, 1.0), 0.4);
-  col += beamCol * (1.0 - exp(-tr * 2.2)) * 2.2;
+  col += beamCol * (1.0 - exp(-tr * 1.3)) * 1.6;
 
   // Ion source at the centre.
   col += vec3(1.0, 0.85, 0.6) * exp(-r / 0.006) * (0.8 + 0.6 * uHigh * noise2(vec2(uTime * 30.0, 0.0)));
@@ -212,7 +212,7 @@ void main() {
       const pdir = [(T[0] - E[0]) / pipeL, (T[1] - E[1]) / pipeL];
 
       // Inject from the ion source.
-      this.injectT += dt * (1.2 + 3 * audio.level) * P.current;
+      this.injectT += dt * (0.8 + 1.6 * audio.level) * P.current;
       while (this.injectT >= 1 && this.parts.length < NP) {
         this.injectT -= 1;
         this.parts.push({ th: Math.random() * TAU, r: 0.012, s: -1, prev: null, e: 0 });
@@ -240,7 +240,8 @@ void main() {
         const now = q.s < 0 ? [C[0] + Math.cos(q.th) * q.r, C[1] + Math.sin(q.th) * q.r] : [E[0] + pdir[0] * Math.min(q.s, pipeL), E[1] + pdir[1] * Math.min(q.s, pipeL)];
         if (n < NP) {
           this.seg.set([before[0], before[1], now[0], now[1]], n * 4);
-          this.inten[n] = (0.35 + 0.9 * audio.mid) * (0.5 + 0.5 * Math.min(1, q.r / RX)) * P.glow;
+          // Light per second, not per frame, so the trails look the same at 60 and 144 Hz.
+          this.inten[n] = (0.35 + 0.9 * audio.mid) * (0.5 + 0.5 * Math.min(1, q.r / RX)) * P.glow * dt * 60;
           n++;
         }
       }
@@ -255,7 +256,7 @@ void main() {
       const src = this.acc[this.cur], dst = this.acc[1 - this.cur];
       dst.bind();
       gl.disable(gl.BLEND);
-      this.fadeProg.use().tex('uPrev', src.tex).f('uDecay', Math.exp(-dt / (0.7 * P.trails)));
+      this.fadeProg.use().tex('uPrev', src.tex).f('uDecay', Math.exp(-dt / (0.3 * P.trails)));
       ctx.drawQuad();
       if (n) {
         gl.enable(gl.BLEND);

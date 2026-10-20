@@ -3,8 +3,8 @@
  * the sky, the radiant (the direction the Earth is ploughing into the comet's debris stream), so
  * the streaks fan outward from it; the radiant and the stars wheel slowly round the pole as the
  * night turns. Colour follows chemistry and speed: fast ones burn blue-green (magnesium, oxygen),
- * slow ones orange (sodium). Fireballs flare, break apart, and leave a persistent train, a
- * glowing trail of ionised air that the high-altitude wind slowly twists out of shape.
+ * slow ones orange (sodium). Fireballs flare, break apart, and leave a brief train, a glowing
+ * trail of ionised air that drifts on the high-altitude wind and breaks up as it fades.
  *   bass  -> every kick is a fireball
  *   mids  -> the Milky Way and the airglow brighten
  *   highs -> faint, quick meteors; star twinkle
@@ -69,17 +69,22 @@ void main() {
     col += mix(vec3(0.75, 0.82, 1.0), vec3(1.0, 0.85, 0.7), h.y) * on * exp(-d * d * (l == 0 ? 900.0 : 1800.0)) * tw * (l == 0 ? 1.0 : 0.55);
   }
 
-  // Persistent trains: glowing, slowly twisted by the wind.
+  // Persistent trains: a brief afterglow that drifts on the high-altitude wind, spreads and
+  // breaks up as it dissolves (never a static streak).
   for (int i = 0; i < NT; i++) {
     vec2 tt = uT2[i];
     if (tt.y <= 0.0 || tt.x > tt.y) continue;
     vec4 tr = uT[i];
     float k = tt.x / tt.y;
-    vec2 w = vec2(noise2(vec2(p.y * 6.0, tt.x * 0.3 + float(i))) - 0.5, noise2(vec2(p.x * 6.0, tt.x * 0.3 + float(i) * 3.0)) - 0.5) * 0.06 * k;
+    float fi = float(i);
+    vec2 wind = vec2(hash11(fi * 3.1 + 1.0) - 0.5, 0.25 + 0.3 * hash11(fi * 7.7)) * 0.05 * tt.x;
+    vec2 w = vec2(noise2(vec2(p.y * 7.0, tt.x * 0.8 + fi)) - 0.5, noise2(vec2(p.x * 7.0, tt.x * 0.8 + fi * 3.0)) - 0.5) * 0.05 * k;
     float h;
-    float d = segDist(p + w, tr.xy, tr.zw, h);
-    float width = 0.002 + 0.012 * k;
-    col += mix(vec3(0.5, 1.0, 0.7), palette(0.6), 0.3) * exp(-d * d / (width * width)) * (1.0 - k) * (1.0 - k) * 0.35 * (0.4 + h);
+    float d = segDist(p - wind + w, tr.xy, tr.zw, h);
+    float width = 0.0025 + 0.02 * k;
+    float breakup = smoothstep(0.25 + 0.5 * k, 0.75, noise2(vec2(h * 9.0 + fi * 5.0, tt.x * 0.6)) + 0.35 * (1.0 - k));
+    float fade = smoothstep(0.0, 0.08, k) * (1.0 - k) * (1.0 - k);
+    col += mix(vec3(0.5, 1.0, 0.7), palette(0.6), 0.3) * exp(-d * d / (width * width)) * fade * breakup * 0.3 * (0.4 + h);
   }
   // Meteors: a hot head, a fading tail; fireballs flare and shed fragments.
   for (int i = 0; i < NM; i++) {
@@ -187,7 +192,7 @@ void main() {
         const t = this.nextT;
         this.nextT = (this.nextT + 1) % NT;
         this.tr.set([hx - this.m[o + 2] * L, hy - this.m[o + 3] * L, hx, hy], t * 4);
-        this.tr2.set([0, (5 + Math.random() * 4) * P.trains], t * 2);
+        this.tr2.set([0, (1.4 + Math.random() * 1.4) * P.trains], t * 2);
         return false;
       });
       const p = this.prog.use();
@@ -207,7 +212,7 @@ void main() {
       { key: 'fireballs', label: 'Fireballs on kicks', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'faint', label: 'Faint meteors on highs', min: 0, max: 1.25, step: 0.05, value: 1 },
       { key: 'rate', label: 'Background rate', min: 0, max: 8, step: 0.1, value: 1.5, fmt: (v) => v.toFixed(1) + ' / s' },
-      { key: 'trains', label: 'Train lifetime', min: 0, max: 2, step: 0.05, value: 1 },
+      { key: 'trains', label: 'Fireball train lifetime', min: 0, max: 3, step: 0.05, value: 1 },
       { key: 'rotation', label: 'Sky rotation', min: 0, max: 4, step: 0.05, value: 1 },
     ],
     create: (ctx) => new MeteorScene(ctx),
