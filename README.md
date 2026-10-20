@@ -93,11 +93,12 @@ Every scene follows the same rule so you can read it without a legend: **bass mo
 - *Tokamak*: a fusion plasma in its coils; every kick is an edge-localised mode erupting outward.
 
 **Lab instruments**
-- *Oscilloscope*: the waveform itself on a green phosphor screen, either plotted against a delayed
-  copy of itself (XY, which turns chords into Lissajous knots) or as a triggered sweep. Like a
-  real tube, the beam is brightest where it moves slowly.
-- *Seismograph*: a helicorder drum inking the ground. Every kick is a quake and arrives the way
-  real ones do: the small P-wave, then the S-wave, then the big surface waves.
+- *Oscilloscope*: a three-channel scope on a phosphor screen. The audio is split into lows,
+  mids and highs, each drawn by its own slow beam in its own colour and restarted by its own
+  band's hits: XY figures side by side, or three stacked sweeps.
+- *Seismograph*: a three-pen helicorder drum. Black ink writes quakes on the kicks (P-wave, then
+  S-wave, then the big surface waves), red writes volcanic tremor in the mids, blue writes
+  micro-quake spikes on the highs.
 - *Schlieren Camera*: the optical trick that shows air itself. A real 2D wave simulation: the
   speaker pushes pressure rings across the field on kicks, past a candle's heat plume.
 - *Cyclotron*: particles spiral out between the copper dees, pushed at every gap crossing by an
