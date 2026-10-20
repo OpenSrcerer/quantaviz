@@ -44,6 +44,7 @@ uniform vec3 uUp;
 uniform float uRot;          // drum rotation, so the pens' angle maps to the column being written
 uniform vec2 uPenTip[3];     // pen contact points, screen coords
 uniform vec2 uPenBase[3];    // pen arm pivots, screen coords
+uniform float uTurns;        // turns so far (fractional): ages the ink
 const float R = ${DRUM_R.toFixed(2)};
 const float L = ${DRUM_L.toFixed(2)};
 const float ROW_H = ${ROW_H.toFixed(5)};
@@ -98,6 +99,11 @@ void main() {
           vec4 s = texture(uTrace, vec2(aPaper, tr));
           vec4 s2 = texture(uTrace, vec2(aPaper + 1.0 / ${W}.0, tr));
           float written = step(0.004, s.a);
+          // How many turns ago this spot was last inked: the pens come back to the same row every
+          // ROWS turns. Old ink fades over its last few turns, so it is gone before it is written over.
+          float lastTurn = row + ROWS * floor((uTurns - aPaper - row) / ROWS) + aPaper;
+          float age = uTurns - lastTurn;
+          written *= 1.0 - smoothstep(ROWS - 4.0, ROWS - 0.6, age);
           float fw = max(fwidth(rowCoord), 1e-4);
           float lw = 0.007 + fw * 0.6;
           float arcPerSample = TAU * R / ${W}.0 / ROW_H;
@@ -268,11 +274,9 @@ void main() {
       const v = this.cur;
       for (let i = i0 + 1; i <= i1; i++) {
         const row = Math.floor(i / W) % ROWS;
-        if (row !== this.row) {
-          // A new turn: clear the row the pens are about to write (it held a turn from long ago).
-          this.row = row;
-          this.data.fill(0, row * W * 4, (row + 1) * W * 4);
-        }
+        // A new turn: the pens simply write over the turn from ROWS turns ago, which has faded out
+        // by now (see the ink's age in the shader); nothing is wiped all at once.
+        if (row !== this.row) this.row = row;
         this._signal(t0 + (i - i0) / Math.max(1, i1 - i0) * dt, audio, P, v);
         this._pen(v, period / W);
         this._write(row, i % W, v);
@@ -320,7 +324,8 @@ void main() {
       p.tex('uTrace', this.tex)
         .f3('uEye', ...eye).f3('uFwd', ...f).f3('uRight', ...r).f3('uUp', ...up)
         .f('uRot', rot + PEN_ANGLE)
-        .f2v('uPenTip', this.tips).f2v('uPenBase', this.bases);
+        .f2v('uPenTip', this.tips).f2v('uPenBase', this.bases)
+        .f('uTurns', this.turns);
       this.ctx.drawQuad();
     }
     dispose() { this.prog.dispose(); this.gl.deleteTexture(this.tex); }
