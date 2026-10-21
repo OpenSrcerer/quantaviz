@@ -79,7 +79,8 @@ void main() {
       const el = this.ui;
       if (!el) return null;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = Math.max(1, Math.round(el.clientWidth * dpr)), h = Math.max(1, Math.round(el.clientHeight * dpr));
+      const w = Math.round(el.clientWidth * dpr), h = Math.round(el.clientHeight * dpr);
+      if (w < 64 || h < 64) { this.clearUI(); return null; }      // collapsed window: nothing sensible to draw
       if (el.width !== w || el.height !== h) { el.width = w; el.height = h; }
       const g = el.getContext('2d');
       reset(g);

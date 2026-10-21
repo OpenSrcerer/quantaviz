@@ -757,8 +757,8 @@ void main() {
       g.globalAlpha = 1;
 
       this._boxes(g, m, H, S, fs, font);
-      this._nucleus(g, W, m, S, fs, font);
-      this._quantum(g, W, m, S, fs, font);
+      const below = this._nucleus(g, W, m, S, fs, font);
+      this._quantum(g, W, below + S(0.03), S, fs, font);
       this._spectrum(g, W, H, m, S, fs, font);
       // The event log, newest at the bottom.
       g.textAlign = 'right';
@@ -856,7 +856,7 @@ void main() {
       const n = this.nuc.filter((b) => !b.out).length || 1;
       const scale = Math.min(r * 0.17, r * 0.78 / (1.12 * Math.cbrt(n) + 0.6));
       g.save();
-      g.beginPath(); g.arc(cx, cy, r - 1, 0, TAU); g.clip();
+      g.beginPath(); g.arc(cx, cy, Math.max(0, r - 1), 0, TAU); g.clip();
       for (const b of this.nuc) {
         const bx = cx + b.x * scale, by = cy - b.y * scale, br = scale * 0.98 * (b.out ? 1 : 0.4 + 0.6 * b.s);
         g.globalAlpha = b.out ? Math.max(0, 1 - b.out / 0.6) : 1;
@@ -882,9 +882,10 @@ void main() {
       font(fs * 0.85, true);
       g.fillStyle = INK;
       g.fillText(`${this.Z}p  ${this.N}n   A = ${this.Z + this.N}`, cx, cy + r + S(0.042));
+      return cy + r + S(0.042) + fs * 0.6;          // where the next block can start
     }
 
-    _quantum(g, W, m, S, fs, font) {
+    _quantum(g, W, top, S, fs, font) {
       // The electron we're watching: the excited one, or the outermost.
       const x = this.exc;
       let slot, s;
@@ -897,7 +898,8 @@ void main() {
       const zf = this.z[s], ns = NSTAR[s];
       const rMean = ns * ns / zf * (1.5 - l * (l + 1) / (2 * SN[s] * SN[s]));
       const E = x ? x.Ee * x.ce * x.ce + x.Eg * x.cg * x.cg : -IE[this.Z];
-      let y = m + S(0.21);
+      const m = S(0.03);
+      let y = top;
       const right = W - m;
       g.textAlign = 'right';
       font(fs * 0.72, false, UI);
