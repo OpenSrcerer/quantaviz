@@ -225,17 +225,19 @@ void main() {
       this.quietT = 10;
     }
 
-    _layout(asp) {
+    _layout(asp, panels) {
+      // Without the instrument panel and legend, the core gets the whole screen.
       const m = 0.035;
-      const panel = Math.min(0.36, asp * 0.3);
-      this.F = [-asp / 2 + m + 0.07, -0.5 + 0.19, asp / 2 - m - panel - 0.035, 0.5 - 0.085];
+      const panel = panels ? Math.min(0.36, asp * 0.3) : 0;
+      this.F = [-asp / 2 + m + 0.07, -0.5 + (panels ? 0.19 : 0.06), asp / 2 - m - panel - (panels ? 0.035 : 0.01), 0.5 - (panels ? 0.085 : 0.05)];
       this.panelW = panel;
       const [x0, y0, x1, y1] = this.F;
       const nR = Math.max(2, Math.round((x1 - x0) / 0.4));
       this.rods = [];
       for (let i = 0; i < nR; i++) this.rods.push(x0 + (x1 - x0) * (i + 0.5) / nR);
       this.sites = [];
-      this.nuclei = this.nuclei.filter((n) => n.kind !== 'fuel');
+      // A new layout starts a clean core; leftovers would sit outside the new frame.
+      this.nuclei = []; this.neutrons = []; this.gammas = []; this.betas = []; this.beams = []; this.fusions = []; this.events = [];
       const S = 0.122, rowH = S * 0.866;
       for (let r = 0, y = y0 + 0.07; y < y1 - 0.06; r++, y += rowH) {
         for (let x = x0 + 0.07 + (r & 1) * S * 0.5; x < x1 - 0.06; x += S) {
@@ -246,6 +248,7 @@ void main() {
       }
       this.src = [x0 - 0.045, (y0 + y1) / 2];
       this.layoutAsp = asp;
+      this.layoutPanels = panels;
     }
 
     _fuel(site) {
@@ -439,7 +442,8 @@ void main() {
       const P = u.params;
       const asp = u.width / u.height;
       this.t += dt;
-      if (Math.abs(asp - this.layoutAsp) > 0.01) this._layout(asp);
+      const panels = P.panels > 0.5;
+      if (Math.abs(asp - this.layoutAsp) > 0.01 || panels !== this.layoutPanels) this._layout(asp, panels);
       const [fx0, fy0, fx1, fy1] = this.F;
       const pal = u.palette;
       this.hot = [pal[9] * 0.5 + 0.5, pal[10] * 0.5 + 0.4, pal[11] * 0.5 + 0.25];
@@ -648,48 +652,27 @@ void main() {
     }
 
     _drawHud(u, audio, P, rodBot, RW) {
-      const W = u.width, H = u.height, asp = W / H;
-      const g = this.hud.begin(W, H);
-      const X = (x) => (x / asp + 0.5) * W, Y = (y) => (0.5 - y) * H, S = (l) => l * H;
-      const [fx0, fy0, fx1, fy1] = this.F;
-      const fs = Math.max(9, Math.round(H / 64));
-      const lab = P.labels;
-      const font = (px, bold, fam = MONO) => { g.font = (bold ? 'bold ' : '') + Math.round(px) + 'px ' + fam; };
-      const line = (x0, y0, x1, y1) => { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
-      const arrow = (x0, y0, x1, y1, head) => {
-        line(x0, y0, x1, y1);
-        const a = Math.atan2(y1 - y0, x1 - x0);
-        g.beginPath();
-        g.moveTo(x1, y1);
-        g.lineTo(x1 - Math.cos(a - 0.4) * head, y1 - Math.sin(a - 0.4) * head);
-        g.lineTo(x1 - Math.cos(a + 0.4) * head, y1 - Math.sin(a + 0.4) * head);
-        g.closePath(); g.fill();
-      };
+      // Graphics that belong to the scene go on the world layer (they shake and glow with it);
+      // every bit of text and the instrument panel goes on the screen overlay, untouched by effects.
+      const w = VIZ.Hud.pen(this.hud.begin(u.width, u.height), u.width, u.height);
+      const ug = this.hud.beginUI();
+      const o = ug ? VIZ.Hud.pen(ug, ug.canvas.width, ug.canvas.height) : null;
+      const lab = P.labels && o, pan = P.panels && o;
+      this._drawWorld(w, rodBot, RW);
+      if (lab) this._drawLabels(o, RW);
+      if (pan) { this._legend(o); this._panel(o); }
+    }
 
-      // Drawing frame: a double border, corner ticks, and a dimension line.
+    _drawWorld(p, rodBot, RW) {
+      const { g, X, Y, S, H, line, arrow } = p;
+      const [fx0, fy0, fx1, fy1] = this.F;
+      // Drawing frame: a double border.
       g.strokeStyle = INK; g.lineWidth = Math.max(1, H / 600);
       g.globalAlpha = 0.75;
       g.strokeRect(X(fx0), Y(fy1), X(fx1) - X(fx0), Y(fy0) - Y(fy1));
       g.globalAlpha = 0.3;
       const o = S(0.008);
       g.strokeRect(X(fx0) - o, Y(fy1) - o, X(fx1) - X(fx0) + 2 * o, Y(fy0) - Y(fy1) + 2 * o);
-      g.globalAlpha = 0.6;
-      g.fillStyle = INK;
-      const dimY = Y(fy0) + S(0.03);
-      g.lineWidth = Math.max(1, H / 900);
-      arrow((X(fx0) + X(fx1)) / 2 - S(0.09), dimY, X(fx0) + 1, dimY, S(0.01));
-      arrow((X(fx0) + X(fx1)) / 2 + S(0.09), dimY, X(fx1) - 1, dimY, S(0.01));
-      line(X(fx0), dimY - S(0.012), X(fx0), dimY + S(0.012));
-      line(X(fx1), dimY - S(0.012), X(fx1), dimY + S(0.012));
-      font(fs * 0.85, false);
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(((fx1 - fx0) * 1.2).toFixed(1) + ' × 10' + VIZ.sup(-13) + ' m', (X(fx0) + X(fx1)) / 2, dimY);
-
-      // Title line.
-      g.globalAlpha = 0.9;
-      g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-      font(fs * 1.1, true, UI);
-      g.fillText('FIG. 29 — FISSION OF ' + VIZ.sup(235) + 'U  ·  D–T FUSION', X(fx0), Y(fy1) - S(0.022));
 
       // Control rods: hatched boron carbide.
       for (const rx of this.rods) {
@@ -704,15 +687,6 @@ void main() {
         g.restore();
         g.strokeStyle = INK; g.lineWidth = Math.max(1, H / 700); g.globalAlpha = 0.8;
         g.strokeRect(x0, y0, x1 - x0, y1 - y0);
-        if (lab) {
-          g.save();
-          g.translate(x1 + S(0.012), y0 + S(0.05));
-          g.rotate(Math.PI / 2);
-          font(fs * 0.75, false);
-          g.fillStyle = DIM; g.globalAlpha = 1;
-          g.fillText('CONTROL ROD · B' + VIZ.sub(4) + 'C', 0, 0);
-          g.restore();
-        }
       }
 
       // The neutron source on the left wall.
@@ -723,12 +697,6 @@ void main() {
       g.strokeRect(sx - S(0.022), sy - S(0.05), S(0.044), S(0.1));
       g.fillStyle = CYAN;
       g.beginPath(); g.arc(sx + S(0.022), sy, S(0.008), 0, TAU); g.fill();
-      if (lab) {
-        g.save(); g.translate(sx - S(0.006), sy + S(0.045)); g.rotate(-Math.PI / 2);
-        font(fs * 0.75, false); g.fillStyle = DIM; g.textAlign = 'left';
-        g.fillText('Am–Be n SOURCE', 0, 0);
-        g.restore();
-      }
 
       // Beams from the source: the kick's neutrons, drawn as a dashed arrow.
       for (const b of this.beams) {
@@ -757,11 +725,6 @@ void main() {
         g.lineTo(ax - q.dy * S(0.004), ay - q.dx * S(0.004));
         g.lineTo(ax + q.dy * S(0.004), ay + q.dx * S(0.004));
         g.closePath(); g.fill();
-        if (q.tag && q.age < 1.2 && lab) {
-          font(fs * 0.8, false); g.fillStyle = CYAN; g.globalAlpha = 1 - q.age / 1.2;
-          g.textAlign = 'left';
-          g.fillText('n  14.1 MeV', hx + S(0.014), hy - S(0.014));
-        }
       }
 
       // Gamma rays: a wavy packet heading off at the speed of light (more or less).
@@ -773,15 +736,11 @@ void main() {
         const len = 0.11, nx = -r.dy, ny = r.dx;
         for (let i = 0; i <= 40; i++) {
           const s = i / 40 * len;
-          const w = Math.sin((s - r.age * 1.6) / 0.012 * TAU / 2.2) * 0.006 * Math.sin(i / 40 * Math.PI);
-          const x = r.x - r.dx * s + nx * w, y = r.y - r.dy * s + ny * w;
+          const wv = Math.sin((s - r.age * 1.6) / 0.012 * TAU / 2.2) * 0.006 * Math.sin(i / 40 * Math.PI);
+          const x = r.x - r.dx * s + nx * wv, y = r.y - r.dy * s + ny * wv;
           if (i === 0) g.moveTo(X(x), Y(y)); else g.lineTo(X(x), Y(y));
         }
         g.stroke();
-        if (lab && r.age < 0.5) {
-          font(fs * 1.05, false, 'Georgia, serif'); g.fillStyle = 'rgb(255, 240, 120)';
-          g.fillText('γ', X(r.x - r.dx * 0.05 + nx * 0.02), Y(r.y - r.dy * 0.05 + ny * 0.02));
-        }
       }
 
       // Beta electrons: a short streak, and the antineutrino's dotted line going the other way.
@@ -794,72 +753,116 @@ void main() {
         const ox = b.x - b.vx * b.age, oy = b.y - b.vy * b.age;
         line(X(ox), Y(oy), X(ox + b.nx * b.age * 0.5), Y(oy + b.ny * b.age * 0.5));
         g.setLineDash([]);
-        if (lab && b.age < 0.7) {
-          font(fs * 0.95, true, 'Georgia, serif'); g.fillStyle = CYAN; g.textAlign = 'left';
-          g.fillText('β' + VIZ.sup('-'), X(b.x) + S(0.01), Y(b.y) - S(0.01));
-          font(fs * 0.85, false, 'Georgia, serif'); g.fillStyle = DIM;
-          g.fillText('ν̄', X(ox + b.nx * b.age * 0.5) + S(0.006), Y(oy + b.ny * b.age * 0.5));
-        }
       }
 
-      // Nucleus labels, with leader lines; repulsion arrows on fresh fragments.
+      // Repulsion arrows on fresh fragments.
+      for (const n of this.nuclei) {
+        if (n.kind !== 'frag' || n.push <= 0) continue;
+        const cx = X(n.x), cy = Y(n.y), r = S(n.R * n.scale);
+        const d = Math.hypot(n.vx, n.vy) || 1;
+        const ux = n.vx / d, uy = -n.vy / d;
+        g.globalAlpha = n.push / 0.7 * 0.85; g.strokeStyle = AMBER; g.fillStyle = AMBER; g.lineWidth = Math.max(1, H / 600);
+        arrow(cx + ux * r * 1.4, cy + uy * r * 1.4, cx + ux * (r * 1.4 + S(0.04)), cy + uy * (r * 1.4 + S(0.04)), S(0.009));
+      }
+      g.globalAlpha = 1;
+    }
+
+    _drawLabels(p, RW) {
+      const { g, X, Y, S, fs, font, line } = p;
+      const [fx0, , , fy1] = this.F;
       g.textBaseline = 'middle';
+      for (const rx of this.rods) {
+        g.save();
+        g.translate(X(rx + RW) + S(0.012), Y(fy1) + S(0.04));
+        g.rotate(Math.PI / 2);
+        font(fs * 0.75, false);
+        g.fillStyle = DIM; g.textAlign = 'left';
+        g.fillText('CONTROL ROD · B' + VIZ.sub(4) + 'C', 0, 0);
+        g.restore();
+      }
+      g.save(); g.translate(X(this.src[0]) - S(0.006), Y(this.src[1]) + S(0.045)); g.rotate(-Math.PI / 2);
+      font(fs * 0.75, false); g.fillStyle = DIM; g.textAlign = 'left';
+      g.fillText('Am–Be n SOURCE', 0, 0);
+      g.restore();
+
+      g.textAlign = 'left';
+      for (const q of this.neutrons) {
+        if (!q.tag || q.age >= 1.2) continue;
+        font(fs * 0.8, false); g.fillStyle = CYAN; g.globalAlpha = 1 - q.age / 1.2;
+        g.fillText('n  14.1 MeV', X(q.x) + S(0.014), Y(q.y) - S(0.014));
+      }
+      for (const r of this.gammas) {
+        if (r.age >= 0.5) continue;
+        g.globalAlpha = 1 - r.age / 0.5;
+        font(fs * 1.05, false, 'Georgia, serif'); g.fillStyle = 'rgb(255, 240, 120)';
+        g.fillText('γ', X(r.x - r.dx * 0.05 - r.dy * 0.02), Y(r.y - r.dy * 0.05 + r.dx * 0.02));
+      }
+      for (const b of this.betas) {
+        if (b.age >= 0.7) continue;
+        g.globalAlpha = 1 - b.age / 0.7;
+        font(fs * 0.95, true, 'Georgia, serif'); g.fillStyle = CYAN;
+        g.fillText('β' + VIZ.sup('-'), X(b.x) + S(0.01), Y(b.y) - S(0.01));
+        const ox = b.x - b.vx * b.age + b.nx * b.age * 0.5, oy = b.y - b.vy * b.age + b.ny * b.age * 0.5;
+        font(fs * 0.85, false, 'Georgia, serif'); g.fillStyle = DIM;
+        g.fillText('ν̄', X(ox) + S(0.006), Y(oy));
+      }
+
+      // Nucleus labels, with leader lines on the fragments.
       for (const n of this.nuclei) {
         if (n.alpha < 0.05) continue;
         const cx = X(n.x), cy = Y(n.y), r = S(n.R * n.scale);
         if (n.kind === 'fuel') {
-          if (!lab) continue;
           const ex = n.state === 'excited';
           font(fs * (ex ? 0.95 : 0.78), ex);
           g.fillStyle = ex ? AMBER : DIM; g.globalAlpha = n.alpha * (ex ? 1 : 0.85);
-          g.textAlign = 'left';
           g.fillText(ex ? VIZ.sup(236) + 'U*' : VIZ.sup(235) + 'U', cx + r * 0.8, cy + r * 1.25);
-          continue;
-        }
-        if (n.kind === 'frag') {
-          if (n.push > 0) {
-            const a = n.push / 0.7;
-            const d = Math.hypot(n.vx, n.vy) || 1;
-            const ux = n.vx / d, uy = -n.vy / d;
-            g.globalAlpha = a * 0.85; g.strokeStyle = AMBER; g.fillStyle = AMBER; g.lineWidth = Math.max(1, H / 600);
-            arrow(cx + ux * r * 1.4, cy + uy * r * 1.4, cx + ux * (r * 1.4 + S(0.04)), cy + uy * (r * 1.4 + S(0.04)), S(0.009));
-          }
-          if (!lab) continue;
+        } else if (n.kind === 'frag') {
           g.globalAlpha = n.alpha;
           g.strokeStyle = DIM; g.lineWidth = 1;
           const lx = cx + r + S(0.018), ly = cy - r - S(0.012);
           line(cx + r * 0.7, cy - r * 0.7, lx, ly);
           font(fs * 0.95, true);
-          g.fillStyle = n.flash ? CYAN : INK; g.textAlign = 'left';
+          g.fillStyle = n.flash ? CYAN : INK;
           g.fillText(iso(n.A, n.Z), lx + S(0.004), ly);
-          continue;
-        }
-        if (n.kind === 'light' && lab) {
+        } else {
           font(fs * 0.85, true);
-          g.globalAlpha = n.alpha; g.fillStyle = n.Z === 2 ? GREEN : INK; g.textAlign = 'left';
+          g.globalAlpha = n.alpha; g.fillStyle = n.Z === 2 ? GREEN : INK;
           const name = n.A === 2 ? VIZ.sup(2) + 'H (D)' : n.A === 3 ? VIZ.sup(3) + 'H (T)' : VIZ.sup(4) + 'He';
           g.fillText(name, cx + r + S(0.008), cy - r - S(0.008));
         }
       }
 
       // Floating labels and marks.
+      g.textAlign = 'center';
       for (const e of this.events) {
         const a = Math.min(1, (e.life - e.age) / 0.4, e.age / 0.08);
-        if (!lab && e.text !== 'SCRAM') continue;
-        g.globalAlpha = Math.max(0, a); g.fillStyle = e.color; g.textAlign = 'center';
+        g.globalAlpha = Math.max(0, a); g.fillStyle = e.color;
         font(fs * e.size, e.bold || e.text.indexOf('MeV') >= 0);
         if (e.text === 'SCRAM') g.globalAlpha *= 0.55 + 0.45 * (Math.sin(this.t * 18) > 0 ? 1 : 0);
         g.fillText(e.text, X(e.x), Y(e.y));
       }
-
-      // Legend and the equations along the bottom.
-      this._legend(g, X, Y, S, fs, font, lab);
-      this._panel(g, W, H, S, fs, font, P);
       g.globalAlpha = 1;
     }
 
-    _legend(g, X, Y, S, fs, font, lab) {
-      const [fx0, fy0] = this.F;
+    _legend(p) {
+      const { g, X, Y, S, H, fs, font, line, arrow } = p;
+      const [fx0, fy0, fx1, fy1] = this.F;
+      // Title, and a dimension line under the core.
+      g.globalAlpha = 0.9; g.fillStyle = INK;
+      g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+      font(fs * 1.1, true, UI);
+      g.fillText('FIG. 29 — FISSION OF ' + VIZ.sup(235) + 'U  ·  D–T FUSION', X(fx0), Y(fy1) - S(0.022));
+      g.globalAlpha = 0.6; g.strokeStyle = INK;
+      const dimY = Y(fy0) + S(0.03);
+      g.lineWidth = Math.max(1, H / 900);
+      arrow((X(fx0) + X(fx1)) / 2 - S(0.09), dimY, X(fx0) + 1, dimY, S(0.01));
+      arrow((X(fx0) + X(fx1)) / 2 + S(0.09), dimY, X(fx1) - 1, dimY, S(0.01));
+      line(X(fx0), dimY - S(0.012), X(fx0), dimY + S(0.012));
+      line(X(fx1), dimY - S(0.012), X(fx1), dimY + S(0.012));
+      font(fs * 0.85, false);
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(((fx1 - fx0) * 1.2).toFixed(1) + ' × 10' + VIZ.sup(-13) + ' m', (X(fx0) + X(fx1)) / 2, dimY);
+
       let y = Y(fy0) + S(0.075);
       const x = X(fx0);
       g.globalAlpha = 0.95; g.textAlign = 'left'; g.textBaseline = 'middle';
@@ -884,7 +887,6 @@ void main() {
       g.strokeStyle = INK; g.strokeRect(cx, y - S(0.01), S(0.014), S(0.02));
       g.fillStyle = INK; g.fillText('absorber', cx + S(0.024), y);
 
-      if (!lab) return;
       const ch = this.lastEq;
       y += S(0.045);
       font(fs * 1.0, false, 'Georgia, "Times New Roman", serif');
@@ -895,7 +897,8 @@ void main() {
       g.fillText(iso(2, 1) + ' + ' + iso(3, 1) + ' → ' + iso(4, 2) + ' (3.5 MeV) + n (14.1 MeV)', x, y);
     }
 
-    _panel(g, W, H, S, fs, font, P) {
+    _panel(p) {
+      const { g, W, H, S, fs, font } = p;
       const m = S(0.035), pw = S(this.panelW);
       const x0 = W - m - pw;
       let y = m;
@@ -1052,7 +1055,8 @@ void main() {
       { key: 'fusion', label: 'Fusion on the mids', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'decay', label: 'Beta decay on the highs', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'glow', label: 'Glow', min: 0, max: 2, step: 0.05, value: 1 },
-      { key: 'labels', label: 'Diagram labels', min: 0, max: 1, step: 1, value: 1 },
+      { key: 'labels', label: 'Labels on the diagram', toggle: true, value: 1 },
+      { key: 'panels', label: 'Instruments, legend & title', toggle: true, value: 1 },
     ],
     create: (ctx) => new FissionScene(ctx),
   });

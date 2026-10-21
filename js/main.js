@@ -19,7 +19,9 @@
  *   blurb: 'One line shown under the name for a few seconds',
  *   params: [                 // optional user-tweakable sliders (panel "Scene parameters")
  *     { key: 'lensing', label: 'Lensing', min: 0, max: 2, step: 0.01, value: 1 },
+ *     { key: 'labels', label: 'Labels', toggle: true, value: 1 },   // a checkbox; reads 1 or 0
  *   ],
+ * Text and instruments go on the VIZ.Hud screen overlay (js/hud.js), outside the effects.
  *   create(ctx) { return new MyScene(ctx); },
  * });
  *
@@ -609,15 +611,28 @@
         return;
       }
       const values = this.sceneParamValues(def);
+      const save = (key, v) => {
+        const sp = (this.settings.sceneParams[def.id] = this.settings.sceneParams[def.id] || {});
+        sp[key] = v;
+        this.saveSettings();
+      };
       for (const p of def.params) {
+        if (p.toggle) {
+          // On/off params get a checkbox; the scene still reads 1 or 0.
+          const row = document.createElement('label');
+          row.className = 'row check';
+          const box = document.createElement('input');
+          box.type = 'checkbox'; box.checked = values[p.key] > 0.5;
+          box.addEventListener('change', () => save(p.key, box.checked ? 1 : 0));
+          const span = document.createElement('span'); span.textContent = p.label;
+          row.append(box, span);
+          host.appendChild(row);
+          continue;
+        }
         host.appendChild(this.makeSlider(
           { key: 'scene.' + p.key, label: p.label, min: p.min, max: p.max, step: p.step, fmt: p.fmt },
           values[p.key],
-          (v) => {
-            const sp = (this.settings.sceneParams[def.id] = this.settings.sceneParams[def.id] || {});
-            sp[p.key] = v;
-            this.saveSettings();
-          }
+          (v) => save(p.key, v)
         ));
       }
     }
@@ -915,6 +930,9 @@
         this.fade = Math.max(0, this.fade - dt / 0.45);
         if (this.fade <= 0) this.fadeDir = 0;
       }
+      // The scene's label overlay sits outside the post chain, so it fades on its own.
+      const op = ((1 - this.fade) * (1 - this.fade)).toFixed(2);
+      if (op !== this.overlayOpacity) { this.overlayOpacity = op; $('#overlay').style.opacity = op; }
     }
 
     updateUI(dt) {

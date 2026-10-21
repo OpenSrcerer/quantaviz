@@ -661,48 +661,55 @@ void main() {
       fp.tex('uVol', this.vol.tex).f('uSpark', (0.012 + 0.07 * audio.high + 0.12 * audio.highPulse) * P.sparkle).f('uNuc', this.nucFlash);
       ctx.drawQuad();
 
-      this._drawHud(u, P, pal);
+      this._drawHud(u, P);
       this.hud.draw(1.3);
     }
 
-    _drawHud(u, P, pal) {
-      const W = u.width, H = u.height;
-      const g = this.hud.begin(W, H);
-      const S = (l) => l * H;
-      const cx = W / 2, cy = H / 2;
-      const fs = Math.max(9, Math.round(H / 62));
-      const m = S(0.03);
-      const font = (px, bold, fam = MONO) => { g.font = (bold ? 'bold ' : '') + Math.round(px) + 'px ' + fam; };
-      const lab = P.labels;
+    _drawHud(u, P) {
+      // Particles and photons are part of the picture (world layer, effects apply); all the text,
+      // rulers and panels go on the screen overlay, which the effects and the shake never touch.
+      const w = VIZ.Hud.pen(this.hud.begin(u.width, u.height), u.width, u.height, 62);
+      for (const a of this.actors) this._drawActor(w, a, false);
+      const ug = this.hud.beginUI();
+      if (!ug) return;
+      const o = VIZ.Hud.pen(ug, ug.canvas.width, ug.canvas.height, 62);
+      if (P.labels) this._drawLabels(o);
+      if (P.panels) this._drawPanels(o);
+    }
+
+    _drawLabels(p) {
+      const { g, H, S, fs, font } = p;
+      const cx = p.W / 2, cy = p.H / 2, m = S(0.03);
       const pxPerUnit = S(this.cam.focal / this.cam.Dc);
       g.textBaseline = 'middle';
-
       // Bohr-radius rings, a ruler for the cloud.
-      if (lab) {
-        g.strokeStyle = DIM; g.lineWidth = 1; g.setLineDash([2, 5]);
-        font(fs * 0.7, false);
-        let lastR = -1e9;
-        for (const d of [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20]) {
-          const f = d / (this.Rv * 1.05);
-          if (f < 0.03 || f > 1) continue;
-          const r = Math.pow(f, 1 / GAMMA) * pxPerUnit;
-          if (r - lastR < S(0.035)) continue;
-          lastR = r;
-          g.globalAlpha = 0.35;
-          g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.stroke();
-          g.globalAlpha = 0.7; g.fillStyle = DIM; g.textAlign = 'left';
-          g.fillText(d + ' a₀', cx + r + 3, cy - S(0.008));
-        }
-        g.setLineDash([]);
-        g.globalAlpha = 0.6;
-        font(fs * 0.68, false);
-        g.textAlign = 'center';
-        g.fillText('a₀ = 52.9 pm   ·   radial scale compressed   ·   nucleus not to scale', cx, H - m - S(0.105));
+      g.strokeStyle = DIM; g.lineWidth = 1; g.setLineDash([2, 5]);
+      font(fs * 0.7, false);
+      let lastR = -1e9;
+      for (const d of [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20]) {
+        const f = d / (this.Rv * 1.05);
+        if (f < 0.03 || f > 1) continue;
+        const r = Math.pow(f, 1 / GAMMA) * pxPerUnit;
+        if (r - lastR < S(0.035)) continue;
+        lastR = r;
+        g.globalAlpha = 0.35;
+        g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.stroke();
+        g.globalAlpha = 0.7; g.fillStyle = DIM; g.textAlign = 'left';
+        g.fillText(d + ' a₀', cx + r + 3, cy - S(0.008));
       }
+      g.setLineDash([]);
+      g.globalAlpha = 0.6;
+      font(fs * 0.68, false);
+      g.textAlign = 'center';
+      g.fillText('a₀ = 52.9 pm   ·   radial scale compressed   ·   nucleus not to scale', cx, H - m - S(0.105));
+      for (const a of this.actors) this._drawActor(p, a, true);
+      g.globalAlpha = 1;
+    }
 
-      // Particles on their way in or out, and photons.
-      for (const a of this.actors) this._drawActor(g, a, cx, cy, S, fs, font, lab);
-
+    _drawPanels(p) {
+      const { g, W, H, S, fs, font } = p;
+      const cx = W / 2, m = S(0.03);
+      g.textBaseline = 'middle';
       // Element tile, periodic-table style.
       const Z = this.Z, q = this.Z - this.E;
       const T = S(0.15);
@@ -740,16 +747,14 @@ void main() {
       g.fillText(this._configStr(false), tx, m + S(0.122));
 
       // Caption.
-      if (lab) {
-        g.textAlign = 'center';
-        font(fs * 0.95, true, UI);
-        g.fillStyle = INK; g.globalAlpha = 0.85;
-        g.fillText('FIG. 30 — ELECTRON ORBITALS  |ψ|²', cx, m + S(0.01));
-        font(fs * 0.7, false, UI);
-        g.fillStyle = DIM;
-        g.fillText('hydrogen-like wavefunctions · Slater screening · colour = phase of ψ · dots = sampled positions', cx, m + S(0.036));
-        g.globalAlpha = 1;
-      }
+      g.textAlign = 'center';
+      font(fs * 0.95, true, UI);
+      g.fillStyle = INK; g.globalAlpha = 0.85;
+      g.fillText('FIG. 30 — ELECTRON ORBITALS  |ψ|²', cx, m + S(0.01));
+      font(fs * 0.7, false, UI);
+      g.fillStyle = DIM;
+      g.fillText('hydrogen-like wavefunctions · Slater screening · colour = phase of ψ · dots = sampled positions', cx, m + S(0.036));
+      g.globalAlpha = 1;
 
       this._boxes(g, m, H, S, fs, font);
       this._nucleus(g, W, m, S, fs, font);
@@ -975,7 +980,11 @@ void main() {
       g.globalAlpha = 1;
     }
 
-    _drawActor(g, a, cx, cy, S, fs, font, lab) {
+    /** One particle or photon: its graphics on the world layer (text = false), or its tag on the overlay (text = true). */
+    _drawActor(p, a, text) {
+      const { g, S, fs, font } = p;
+      const cx = p.W / 2, cy = p.H / 2;
+      const gx = !text;
       const u = Math.min(1, a.t / a.dur);
       const ball = (x, y, r, c, alpha = 1) => {
         g.globalAlpha = alpha;
@@ -983,36 +992,42 @@ void main() {
         gr.addColorStop(0, '#fff'); gr.addColorStop(0.35, c); gr.addColorStop(1, 'rgba(0,0,0,0.6)');
         g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
       };
+      const tag = (t, x, y, col, px, bold, fam = SERIF, alpha = 1) => {
+        g.globalAlpha = alpha; font(fs * px, bold, fam); g.fillStyle = col; g.textAlign = 'left'; g.fillText(t, x, y);
+      };
       const colOf = { p: 'rgb(230, 70, 55)', n: 'rgb(190, 200, 215)', e: CYAN, pos: 'rgb(255, 120, 200)', alpha: 'rgb(255, 200, 90)' };
       if (a.kind === 'in') {
         const e = u * u;
         const x = cx + a.x * (1 - e) * S(1), y = cy - a.y * (1 - e) * S(1);
+        if (text) { tag(a.p === 'p' ? 'p⁺' : 'n', x + S(0.012), y - S(0.012), colOf[a.p], 0.85, true); return; }
         g.globalAlpha = 0.5; g.strokeStyle = colOf[a.p]; g.lineWidth = 1.5;
         g.beginPath(); g.moveTo(x, y); g.lineTo(cx + a.x * (1 - Math.max(0, e - 0.15)) * S(1), cy - a.y * (1 - Math.max(0, e - 0.15)) * S(1)); g.stroke();
         ball(x, y, S(0.008), colOf[a.p]);
-        if (lab) { font(fs * 0.85, true, SERIF); g.fillStyle = colOf[a.p]; g.textAlign = 'left'; g.fillText(a.p === 'p' ? 'p⁺' : 'n', x + S(0.012), y - S(0.012)); }
       } else if (a.kind === 'out') {
         if (a.p === 'nu') {
           const d = (0.02 + u * 0.7) * S(1);
+          if (text) { tag(a.tag, cx + a.x * d + 4, cy - a.y * d, DIM, 0.85, false, SERIF, 1 - u); return; }
           g.globalAlpha = 1 - u; g.strokeStyle = DIM; g.setLineDash([2, 6]); g.lineWidth = 1;
           g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + a.x * d, cy - a.y * d); g.stroke(); g.setLineDash([]);
-          if (lab) { font(fs * 0.85, false, SERIF); g.fillStyle = DIM; g.textAlign = 'left'; g.fillText(a.tag, cx + a.x * d + 4, cy - a.y * d); }
           return;
         }
         const e = a.fast ? u : 1 - (1 - u) * (1 - u);
         const d = (a.r0 + e * 0.75) * S(1);
         const x = cx + a.x * d, y = cy - a.y * d;
         if (u < 1) {
-          g.globalAlpha = 0.5 * (1 - u); g.strokeStyle = colOf[a.p]; g.lineWidth = 1.5;
-          g.beginPath(); g.moveTo(cx + a.x * a.r0 * S(1), cy - a.y * a.r0 * S(1)); g.lineTo(x, y); g.stroke();
-          ball(x, y, S(a.p === 'alpha' ? 0.012 : a.p === 'e' || a.p === 'pos' ? 0.005 : 0.008), colOf[a.p], 1 - u * 0.5);
-          if (lab && a.tag) { font(fs * 0.9, true, SERIF); g.fillStyle = colOf[a.p]; g.textAlign = 'left'; g.fillText(a.tag, x + S(0.012), y - S(0.012)); }
+          if (text) { if (a.tag) tag(a.tag, x + S(0.012), y - S(0.012), colOf[a.p], 0.9, true); }
+          else {
+            g.globalAlpha = 0.5 * (1 - u); g.strokeStyle = colOf[a.p]; g.lineWidth = 1.5;
+            g.beginPath(); g.moveTo(cx + a.x * a.r0 * S(1), cy - a.y * a.r0 * S(1)); g.lineTo(x, y); g.stroke();
+            ball(x, y, S(a.p === 'alpha' ? 0.012 : a.p === 'e' || a.p === 'pos' ? 0.005 : 0.008), colOf[a.p], 1 - u * 0.5);
+          }
         }
         if (a.annihilate && a.t > a.dur) {
           // The positron meets an electron: two 511 keV gammas, back to back.
           const k = (a.t - a.dur) / 0.6;
-          g.globalAlpha = 1 - k; g.strokeStyle = 'rgb(255, 245, 160)'; g.lineWidth = 1.5;
           const ex = cx + a.x * 0.75 * S(1), ey = cy - a.y * 0.75 * S(1);
+          if (text) { tag('2γ  511 keV', ex + S(0.015), ey + S(0.02), 'rgb(255, 245, 160)', 0.75, false, MONO, 1 - k); return; }
+          g.globalAlpha = 1 - k; g.strokeStyle = 'rgb(255, 245, 160)'; g.lineWidth = 1.5;
           for (const sgn of [1, -1]) {
             g.beginPath();
             for (let i = 0; i <= 20; i++) {
@@ -1024,12 +1039,12 @@ void main() {
             g.stroke();
           }
           if (k < 0.15) ball(ex, ey, S(0.02) * (1 - k * 5), 'rgb(255, 245, 200)', 1 - k * 5);
-          if (lab) { font(fs * 0.75, false); g.fillStyle = 'rgb(255, 245, 160)'; g.textAlign = 'left'; g.fillText('2γ  511 keV', ex + S(0.015), ey + S(0.02)); }
         }
       } else if (a.kind === 'spiral') {
         const rr = (0.75 * Math.pow(1 - u, 1.6) + 0.12 * u) * S(1);
         const th = a.a0 + u * 3 * Math.PI;
         const x = cx + Math.cos(th) * rr, y = cy - Math.sin(th) * rr;
+        if (text) { if (u < 0.6) tag('e⁻', x + S(0.01), y - S(0.012), CYAN, 0.85, true); return; }
         g.globalAlpha = 0.35; g.strokeStyle = CYAN; g.lineWidth = 1.2;
         g.beginPath();
         for (let i = 0; i <= 16; i++) {
@@ -1040,17 +1055,18 @@ void main() {
         }
         g.stroke();
         ball(x, y, S(0.005), CYAN, 1 - Math.max(0, u - 0.85) / 0.15);
-        if (lab && u < 0.6) { font(fs * 0.85, true, SERIF); g.fillStyle = CYAN; g.textAlign = 'left'; g.fillText('e⁻', x + S(0.01), y - S(0.012)); }
       } else if (a.kind === 'fall') {
-        const r0 = S(0.05) * (1 - u);
-        const x = cx + r0, y = cy;
-        ball(x, y, S(0.004), CYAN, 1 - u * 0.5);
+        if (gx) ball(cx + S(0.05) * (1 - u), cy, S(0.004), CYAN, 1 - u * 0.5);
       } else if (a.kind === 'photon') {
         // A wave packet; inbound ones arrive at the atom, outbound ones leave it.
         const c = a.gamma ? 'rgb(255, 245, 160)' : waveCss(a.nm);
         const head = a.dir > 0 ? 0.04 + u * 0.8 : 0.8 * (1 - u) + 0.02;
-        const len = 0.1;
         const nx = -a.y, ny = a.x;
+        if (text) {
+          if (a.label && u < 0.7) tag(a.gamma ? 'γ' : a.nm < 10 ? 'X-ray' : 'hν  ' + fmtNm(a.nm), cx + (a.x * head + nx * 0.02) * S(1), cy - (a.y * head + ny * 0.02) * S(1), c, 0.8, false);
+          return;
+        }
+        const len = 0.1;
         const lam = a.gamma || a.nm < 380 ? 0.006 : a.nm > 750 ? 0.02 : 0.006 + 0.012 * (a.nm - 380) / 370;
         g.globalAlpha = a.dir > 0 ? 1 - u * 0.8 : 0.4 + 0.6 * u; g.strokeStyle = c; g.lineWidth = Math.max(1.4, S(0.0025));
         g.beginPath();
@@ -1062,11 +1078,6 @@ void main() {
           if (i) g.lineTo(px, py); else g.moveTo(px, py);
         }
         g.stroke();
-        if (lab && a.label && u < 0.7) {
-          font(fs * 0.8, false, SERIF); g.fillStyle = c; g.textAlign = 'left';
-          const t = a.gamma ? 'γ' : a.nm < 10 ? 'X-ray' : 'hν  ' + fmtNm(a.nm);
-          g.fillText(t, cx + (a.x * head + nx * 0.02) * S(1), cy - (a.y * head + ny * 0.02) * S(1));
-        }
       }
     }
 
@@ -1089,7 +1100,8 @@ void main() {
       { key: 'sparkle', label: 'Measurement specks (highs)', min: 0, max: 2, step: 0.05, value: 1 },
       { key: 'spin', label: 'Rotation (bass)', min: 0, max: 3, step: 0.05, value: 1 },
       { key: 'glow', label: 'Cloud brightness (mids)', min: 0.2, max: 3, step: 0.05, value: 1 },
-      { key: 'labels', label: 'Diagram labels', min: 0, max: 1, step: 1, value: 1 },
+      { key: 'labels', label: 'Labels & Bohr-radius rings', toggle: true, value: 1 },
+      { key: 'panels', label: 'Element card, readouts & spectrum', toggle: true, value: 1 },
     ],
     create: (ctx) => new OrbitalScene(ctx),
   });
