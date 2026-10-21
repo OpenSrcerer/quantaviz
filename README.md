@@ -6,7 +6,7 @@ every bass hit. It runs in the browser (WebGL2 + Web Audio), has no dependencies
 and doesn't talk to the network.
 
 It started as "what if the bar spectrum was a Schrödinger equation" and got out of hand. There are
-28 experiments now.
+30 experiments now.
 
 > **Photosensitivity warning:** Quanta flashes, strobes and changes colour fast. It can trigger
 > seizures in people with photosensitive epilepsy. If that's you or anyone watching, don't use it.
@@ -63,6 +63,16 @@ Every scene follows the same rule so you can read it without a legend: **bass mo
 - *Double Slit*: photons land one at a time and slowly build the interference fringes. Every kick
   is a which-way measurement, and the fringes collapse until it passes.
 - *Feynman Diagrams*: spacetime scrolls by and the music writes particle interactions onto it.
+- *Chain Reaction*: a blueprint-style textbook figure of uranium fission. Kicks fire the neutron
+  source, nuclei wobble, neck and split into labelled fragments, and the freed neutrons go looking
+  for more uranium. The bass pulls the control rods out; if the population runs away the reactor
+  SCRAMs. Mids fuse deuterium and tritium, highs beta-decay the fragments (watch the labels change).
+  The panel on the right reads k_eff, power, dose rate and a Geiger counter.
+- *Electron Cloud*: an atom as real hydrogen-like orbitals, filled in aufbau order and coloured
+  by phase. Kicks lift an electron into an excited state (it sloshes while it's in superposition)
+  and it falls back emitting its spectral line onto the spectrometer. Every so often the nucleus
+  transmutes (beta decay, electron capture, alpha decay...) and the cloud rebuilds as the next
+  element. The white specks are electron positions sampled from |ψ|².
 
 **Space**
 - *Spacetime Fabric*: a grid bent by orbiting masses; the gravitational waves are the bass itself.
